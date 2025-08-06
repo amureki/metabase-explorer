@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -193,6 +195,71 @@ func (c *MetabaseClient) getTableFields(tableID int) ([]Field, error) {
 	}
 	
 	return queryMeta.Fields, nil
+}
+
+func openInBrowser(url string) error {
+	var cmd string
+	var args []string
+
+	switch runtime.GOOS {
+	case "windows":
+		cmd = "cmd"
+		args = []string{"/c", "start", url}
+	case "darwin":
+		cmd = "open"
+		args = []string{url}
+	default: // "linux", "freebsd", "openbsd", "netbsd"
+		cmd = "xdg-open"
+		args = []string{url}
+	}
+
+	return exec.Command(cmd, args...).Start()
+}
+
+func toSlug(name string) string {
+	// Convert to lowercase and replace spaces/special chars with hyphens
+	slug := strings.ToLower(name)
+	slug = strings.ReplaceAll(slug, " ", "-")
+	slug = strings.ReplaceAll(slug, "_", "-")
+	// Remove other special characters that might cause issues
+	var result strings.Builder
+	for _, r := range slug {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			result.WriteRune(r)
+		}
+	}
+	return result.String()
+}
+
+func (m model) getWebURL() string {
+	baseURL := strings.TrimSuffix(m.client.baseURL, "/")
+	
+	switch m.currentView {
+	case viewDatabases:
+		if len(m.databases) > 0 && m.cursor < len(m.databases) {
+			db := m.databases[m.cursor]
+			slug := toSlug(db.Name)
+			return fmt.Sprintf("%s/browse/databases/%d-%s", baseURL, db.ID, slug)
+		}
+	case viewTables:
+		if len(m.tables) > 0 && m.cursor < len(m.tables) && m.selectedDatabase != nil {
+			// Open the specific table's reference page
+			return fmt.Sprintf("%s/reference/databases/%d/tables/%d", baseURL, m.selectedDatabase.ID, m.tables[m.cursor].ID)
+		} else if m.selectedDatabase != nil {
+			return fmt.Sprintf("%s/admin/databases/%d", baseURL, m.selectedDatabase.ID)
+		}
+	case viewFields:
+		if len(m.fields) > 0 && m.cursor < len(m.fields) && m.selectedTable != nil && m.selectedDatabase != nil {
+			// Open the specific field's reference page
+			field := m.fields[m.cursor]
+			return fmt.Sprintf("%s/reference/databases/%d/tables/%d/fields/%d", baseURL, m.selectedDatabase.ID, m.selectedTable.ID, field.ID)
+		} else if m.selectedTable != nil && m.selectedDatabase != nil {
+			// Fallback to table reference page
+			return fmt.Sprintf("%s/reference/databases/%d/tables/%d", baseURL, m.selectedDatabase.ID, m.selectedTable.ID)
+		}
+	}
+	
+	return baseURL
 }
 
 type viewState int
@@ -445,6 +512,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.error = ""
 				return m, tea.Batch(loadFields(m.client, m.selectedTable.ID), tickSpinner())
 			}
+		case "w":
+			webURL := m.getWebURL()
+			if err := openInBrowser(webURL); err != nil {
+				m.error = fmt.Sprintf("Failed to open browser: %v", err)
+			}
 		case "backspace":
 			if m.numberInput != "" {
 				// Clear number input
@@ -683,6 +755,8 @@ func (m model) getHelpText() string {
 		// Actions group
 		help.WriteString(keyStyle.Render("enter"))
 		help.WriteString(descStyle.Render(" open  "))
+		help.WriteString(keyStyle.Render("w"))
+		help.WriteString(descStyle.Render(" web  "))
 		help.WriteString(keyStyle.Render("/"))
 		help.WriteString(descStyle.Render(" search  "))
 		
