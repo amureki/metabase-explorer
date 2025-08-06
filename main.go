@@ -303,6 +303,8 @@ type model struct {
 	filteredIndices  []int
 	spinnerIndex     int
 	numberInput      string
+	helpMode         bool
+	helpCursor       int
 }
 
 type databasesLoaded struct {
@@ -523,12 +525,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
+		case "?":
+			m.helpMode = !m.helpMode
+			if m.helpMode {
+				m.helpCursor = 0
+			}
+			return m, nil
 		case "/":
+			if m.helpMode {
+				return m, nil
+			}
 			m.searchMode = true
 			m.searchQuery = ""
 			m.cursor = 0
 			return m, nil
 		case "0", "1", "2", "3", "4", "5", "6", "7", "8", "9":
+			if m.helpMode {
+				return m, nil
+			}
 			// Build up number input
 			m.numberInput += msg.String()
 
@@ -557,11 +571,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		case "up", "k":
+			if m.helpMode {
+				if m.helpCursor > 0 {
+					m.helpCursor--
+				}
+				return m, nil
+			}
 			m.numberInput = "" // Clear number input when using arrow keys
 			if m.cursor > 0 {
 				m.cursor--
 			}
 		case "down", "j":
+			if m.helpMode {
+				// We have 3 links: Repository, Issues, Sponsor
+				if m.helpCursor < 2 {
+					m.helpCursor++
+				}
+				return m, nil
+			}
 			m.numberInput = "" // Clear number input when using arrow keys
 			if m.currentView == viewDatabases && m.cursor < len(m.databases)-1 {
 				m.cursor++
@@ -572,7 +599,48 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if m.currentView == viewFields && m.cursor < len(m.fields)-1 {
 				m.cursor++
 			}
+		case "left", "h":
+			if m.helpMode {
+				// Exit help mode
+				m.helpMode = false
+				return m, nil
+			}
+			if m.numberInput != "" {
+				// Clear number input
+				m.numberInput = ""
+			} else if m.currentView == viewSchemas {
+				m.currentView = viewDatabases
+				m.cursor = 0
+				m.selectedDatabase = nil
+				m.schemas = nil
+			} else if m.currentView == viewTables {
+				m.currentView = viewSchemas
+				m.cursor = 0
+				m.selectedSchema = nil
+				m.tables = nil
+			} else if m.currentView == viewFields {
+				m.currentView = viewTables
+				m.cursor = 0
+				m.selectedTable = nil
+				m.fields = nil
+			}
 		case "right", "l":
+			if m.helpMode {
+				// Open selected link in browser (same as Enter)
+				var url string
+				switch m.helpCursor {
+				case 0:
+					url = "https://github.com/amureki/metabase-explorer"
+				case 1:
+					url = "https://github.com/amureki/metabase-explorer/issues"
+				case 2:
+					url = "https://github.com/sponsors/amureki"
+				}
+				if err := openInBrowser(url); err != nil {
+					m.error = fmt.Sprintf("Failed to open browser: %v", err)
+				}
+				return m, nil
+			}
 			// Clear number input after navigation
 			m.numberInput = ""
 
@@ -599,6 +667,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(loadFields(m.client, m.selectedTable.ID), tickSpinner())
 			}
 		case "enter":
+			if m.helpMode {
+				// Open selected link in browser
+				var url string
+				switch m.helpCursor {
+				case 0:
+					url = "https://github.com/amureki/metabase-explorer"
+				case 1:
+					url = "https://github.com/amureki/metabase-explorer/issues"
+				case 2:
+					url = "https://github.com/sponsors/amureki"
+				}
+				if err := openInBrowser(url); err != nil {
+					m.error = fmt.Sprintf("Failed to open browser: %v", err)
+				}
+				return m, nil
+			}
+
 			// Keep Enter as alternative to right arrow
 			m.numberInput = ""
 
@@ -629,26 +714,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if err := openInBrowser(webURL); err != nil {
 				m.error = fmt.Sprintf("Failed to open browser: %v", err)
 			}
-		case "left", "h":
-			if m.numberInput != "" {
-				// Clear number input
-				m.numberInput = ""
-			} else if m.currentView == viewSchemas {
-				m.currentView = viewDatabases
-				m.cursor = 0
-				m.selectedDatabase = nil
-				m.schemas = nil
-			} else if m.currentView == viewTables {
-				m.currentView = viewSchemas
-				m.cursor = 0
-				m.selectedSchema = nil
-				m.tables = nil
-			} else if m.currentView == viewFields {
-				m.currentView = viewTables
-				m.cursor = 0
-				m.selectedTable = nil
-				m.fields = nil
-			}
 		case "backspace":
 			// Keep backspace as alternative to left arrow
 			if m.numberInput != "" {
@@ -671,7 +736,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.fields = nil
 			}
 		case "esc":
-			if m.numberInput != "" {
+			if m.helpMode {
+				m.helpMode = false
+				return m, nil
+			} else if m.numberInput != "" {
 				// Clear number input
 				m.numberInput = ""
 			} else if m.currentView == viewSchemas {
@@ -751,6 +819,11 @@ func (m model) View() string {
 	white := lipgloss.Color("15")
 	red := lipgloss.Color("9")
 
+	// Handle help mode first - return immediately without showing main content
+	if m.helpMode {
+		return m.renderHelpOverlay(&output, blue, gray, white)
+	}
+
 	// Header
 	title := ""
 	path := ""
@@ -793,7 +866,6 @@ func (m model) View() string {
 	output.WriteString(lipgloss.NewStyle().Bold(true).Foreground(blue).Render(title))
 	output.WriteString("\n")
 	output.WriteString(lipgloss.NewStyle().Foreground(gray).Render(path))
-	output.WriteString("\n")
 
 	// Always reserve a line for search bar to prevent jumping
 	output.WriteString("\n")
@@ -808,7 +880,7 @@ func (m model) View() string {
 		output.WriteString(lipgloss.NewStyle().Foreground(blue).Render("Select: " + m.numberInput + "_"))
 	}
 
-	output.WriteString("\n\n")
+	output.WriteString("\n")
 
 	// Handle loading
 	if m.loading {
@@ -1158,6 +1230,67 @@ func (m model) renderFields(output *strings.Builder, blue, gray, white lipgloss.
 		output.WriteString("\n")
 	}
 
+}
+
+func (m model) renderHelpOverlay(output *strings.Builder, blue, gray, white lipgloss.Color) string {
+	// Title and copyright
+	output.WriteString(lipgloss.NewStyle().Bold(true).Foreground(blue).Render("Metabase Explorer"))
+	output.WriteString("\n")
+	output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("Copyright 2025 Rust Saiargaliev"))
+	output.WriteString("\n\n")
+
+	// Repository info
+	output.WriteString(lipgloss.NewStyle().Bold(true).Foreground(blue).Render("Links"))
+	output.WriteString("\n")
+	
+	// Repository link
+	if m.helpCursor == 0 {
+		output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("▶ Repository: "))
+		output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("https://github.com/amureki/metabase-explorer"))
+	} else {
+		output.WriteString(lipgloss.NewStyle().Foreground(white).Render("  Repository: "))
+		output.WriteString(lipgloss.NewStyle().Foreground(blue).Render("https://github.com/amureki/metabase-explorer"))
+	}
+	output.WriteString("\n")
+	
+	// Issues link  
+	if m.helpCursor == 1 {
+		output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("▶ Issues:     "))
+		output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("https://github.com/amureki/metabase-explorer/issues"))
+	} else {
+		output.WriteString(lipgloss.NewStyle().Foreground(white).Render("  Issues:     "))
+		output.WriteString(lipgloss.NewStyle().Foreground(blue).Render("https://github.com/amureki/metabase-explorer/issues"))
+	}
+	output.WriteString("\n")
+	
+	// Sponsor link
+	if m.helpCursor == 2 {
+		output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("▶ Sponsor:    "))
+		output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("https://github.com/sponsors/amureki"))
+	} else {
+		output.WriteString(lipgloss.NewStyle().Foreground(white).Render("  Sponsor:    "))
+		output.WriteString(lipgloss.NewStyle().Foreground(blue).Render("https://github.com/sponsors/amureki"))
+	}
+	output.WriteString("\n\n")
+
+	// ASCII text logo
+	logo := `███ ███ ██████ ████████  ███  ██████  ███  ██████ ██████
+████████ ██        ██    ██ ██ ██  ██ ██ ██ ██     ██    
+██ █ ██ █████     ██    █████  ██████ █████  █████  █████ 
+██   ██ ██        ██    ██ ██  ██  ██ ██ ██      ██ ██    
+██   ██ ██████    ██    ██  ██ ██████ ██  ██ ██████ ██████
+
+██████ ██  ██ ██████ ██     ██████ ██████ ██████ ██████
+██      ██ ██  ██  ██ ██     ██  ██ ██  ██ ██     ██  ██
+██████   ███   ██████ ██     ██  ██ ██████ █████  ██████
+██      ██ ██  ██     ██     ██  ██ ██ ██  ██     ██  ██
+██████ ██  ██  ██     ██████  █████ ██  ██ ██████ ██  ██`
+	output.WriteString(lipgloss.NewStyle().Foreground(blue).Render(logo))
+	output.WriteString("\n\n")
+
+	output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("Use ↑↓ to navigate, Enter to open link, ? or esc to close"))
+	
+	return output.String()
 }
 
 func main() {
