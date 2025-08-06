@@ -20,7 +20,6 @@ import (
 	"github.com/sahilm/fuzzy"
 )
 
-
 type Database struct {
 	ID     int    `json:"id"`
 	Name   string `json:"name"`
@@ -28,28 +27,28 @@ type Database struct {
 }
 
 type Table struct {
-	ID           int     `json:"id"`
-	Name         string  `json:"name"`
-	DisplayName  string  `json:"display_name"`
-	Schema       string  `json:"schema"`
-	Description  string  `json:"description"`
-	Fields       []Field `json:"fields"`
+	ID          int     `json:"id"`
+	Name        string  `json:"name"`
+	DisplayName string  `json:"display_name"`
+	Schema      string  `json:"schema"`
+	Description string  `json:"description"`
+	Fields      []Field `json:"fields"`
 }
 
 type Field struct {
-	ID              int    `json:"id"`
-	Name            string `json:"name"`
-	DisplayName     string `json:"display_name"`
-	Description     string `json:"description"`
-	BaseType        string `json:"base_type"`
-	EffectiveType   string `json:"effective_type"`
-	SemanticType    string `json:"semantic_type"`
-	DatabaseType    string `json:"database_type"`
-	TableID         int    `json:"table_id"`
-	Position        int    `json:"position"`
-	Active          bool   `json:"active"`
-	PreviewDisplay  bool   `json:"preview_display"`
-	Visibility      string `json:"visibility_type"`
+	ID             int    `json:"id"`
+	Name           string `json:"name"`
+	DisplayName    string `json:"display_name"`
+	Description    string `json:"description"`
+	BaseType       string `json:"base_type"`
+	EffectiveType  string `json:"effective_type"`
+	SemanticType   string `json:"semantic_type"`
+	DatabaseType   string `json:"database_type"`
+	TableID        int    `json:"table_id"`
+	Position       int    `json:"position"`
+	Active         bool   `json:"active"`
+	PreviewDisplay bool   `json:"preview_display"`
+	Visibility     string `json:"visibility_type"`
 }
 
 type MetabaseClient struct {
@@ -71,7 +70,7 @@ func (c *MetabaseClient) testConnection() error {
 	if err != nil {
 		return fmt.Errorf("invalid base URL: %v", err)
 	}
-	
+
 	apiURL, err := baseURL.Parse("/api/user/current")
 	if err != nil {
 		return fmt.Errorf("failed to construct API URL: %v", err)
@@ -98,7 +97,7 @@ func (c *MetabaseClient) getDatabases() ([]Database, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid base URL: %v", err)
 	}
-	
+
 	apiURL, err := baseURL.Parse("/api/database")
 	if err != nil {
 		return nil, fmt.Errorf("failed to construct API URL: %v", err)
@@ -128,7 +127,7 @@ func (c *MetabaseClient) getTables(databaseID int) ([]Table, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid base URL: %v", err)
 	}
-	
+
 	apiURL, err := baseURL.Parse(fmt.Sprintf("/api/database/%d/metadata", databaseID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to construct API URL: %v", err)
@@ -152,11 +151,11 @@ func (c *MetabaseClient) getTables(databaseID int) ([]Table, error) {
 	var metadata struct {
 		Tables []Table `json:"tables"`
 	}
-	
+
 	if err := json.Unmarshal(body, &metadata); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %v", err)
 	}
-	
+
 	return metadata.Tables, nil
 }
 
@@ -165,7 +164,7 @@ func (c *MetabaseClient) getTableFields(tableID int) ([]Field, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid base URL: %v", err)
 	}
-	
+
 	apiURL, err := baseURL.Parse(fmt.Sprintf("/api/table/%d/query_metadata", tableID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to construct API URL: %v", err)
@@ -189,11 +188,11 @@ func (c *MetabaseClient) getTableFields(tableID int) ([]Field, error) {
 	var queryMeta struct {
 		Fields []Field `json:"fields"`
 	}
-	
+
 	if err := json.Unmarshal(body, &queryMeta); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %v", err)
 	}
-	
+
 	return queryMeta.Fields, nil
 }
 
@@ -233,7 +232,7 @@ func toSlug(name string) string {
 
 func (m model) getWebURL() string {
 	baseURL := strings.TrimSuffix(m.client.baseURL, "/")
-	
+
 	switch m.currentView {
 	case viewDatabases:
 		if len(m.databases) > 0 && m.cursor < len(m.databases) {
@@ -258,7 +257,7 @@ func (m model) getWebURL() string {
 			return fmt.Sprintf("%s/reference/databases/%d/tables/%d", baseURL, m.selectedDatabase.ID, m.selectedTable.ID)
 		}
 	}
-	
+
 	return baseURL
 }
 
@@ -386,7 +385,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.searchMode = false
 					m.searchQuery = ""
 					m.filteredIndices = nil
-					
+
 					// Trigger selection
 					if m.currentView == viewDatabases && len(m.databases) > 0 {
 						m.selectedDatabase = &m.databases[actualIndex]
@@ -426,7 +425,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		
+
 		// Normal navigation mode
 		switch msg.String() {
 		case "ctrl+c", "q":
@@ -439,7 +438,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "0", "1", "2", "3", "4", "5", "6", "7", "8", "9":
 			// Build up number input
 			m.numberInput += msg.String()
-			
+
 			// Get current item count for validation
 			var itemCount int
 			switch m.currentView {
@@ -450,45 +449,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case viewFields:
 				itemCount = len(m.fields)
 			}
-			
-			// Try to parse and execute if it's a valid selection
+
+			// Try to parse the number and hover over the item if valid
 			if num, err := strconv.Atoi(m.numberInput); err == nil && num >= 1 && num <= itemCount {
-				// For single digit numbers with < 10 items, execute immediately
-				// For double digit numbers, wait for complete input or execute if it's the only possibility
-				shouldExecute := false
-				if itemCount < 10 || len(m.numberInput) == 2 || num*10 > itemCount {
-					shouldExecute = true
+				// Just hover over the item, don't navigate yet
+				m.cursor = num - 1 // Convert to 0-based index
+			} else if len(m.numberInput) >= 3 || (len(m.numberInput) == 2 && m.numberInput[0] != '0') {
+				// Clear input if it's too long or invalid
+				// Allow leading zeros for 2-digit numbers (01, 02, etc)
+				if num, err := strconv.Atoi(m.numberInput); err != nil || num > itemCount {
+					m.numberInput = ""
 				}
-				
-				if shouldExecute {
-					index := num - 1 // Convert to 0-based index
-					m.numberInput = "" // Clear input
-					
-					if m.currentView == viewDatabases {
-						m.selectedDatabase = &m.databases[index]
-						m.currentView = viewTables
-						m.cursor = 0
-						m.loading = true
-						m.error = ""
-						return m, tea.Batch(loadTables(m.client, m.selectedDatabase.ID), tickSpinner())
-					} else if m.currentView == viewTables {
-						m.selectedTable = &m.tables[index]
-						m.currentView = viewFields
-						m.cursor = 0
-						m.loading = true
-						m.error = ""
-						return m, tea.Batch(loadFields(m.client, m.selectedTable.ID), tickSpinner())
-					}
-				}
-			} else if len(m.numberInput) >= 2 {
-				// Invalid number, clear input
-				m.numberInput = ""
 			}
 		case "up", "k":
+			m.numberInput = "" // Clear number input when using arrow keys
 			if m.cursor > 0 {
 				m.cursor--
 			}
 		case "down", "j":
+			m.numberInput = "" // Clear number input when using arrow keys
 			if m.currentView == viewDatabases && m.cursor < len(m.databases)-1 {
 				m.cursor++
 			} else if m.currentView == viewTables && m.cursor < len(m.tables)-1 {
@@ -497,6 +476,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor++
 			}
 		case "enter":
+			// Clear number input after navigation
+			m.numberInput = ""
+
 			if m.currentView == viewDatabases && len(m.databases) > 0 {
 				m.selectedDatabase = &m.databases[m.cursor]
 				m.currentView = viewTables
@@ -556,7 +538,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.databases = msg.databases
 		}
-		
+
 	case tablesLoaded:
 		m.loading = false
 		if msg.err != nil {
@@ -564,7 +546,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.tables = msg.tables
 		}
-		
+
 	case fieldsLoaded:
 		m.loading = false
 		if msg.err != nil {
@@ -572,7 +554,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.fields = msg.fields
 		}
-		
+
 	case spinnerTick:
 		if m.loading {
 			m.spinnerIndex = (m.spinnerIndex + 1) % 10
@@ -585,17 +567,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) View() string {
 	var output strings.Builder
-	
+
 	// Colors
 	blue := lipgloss.Color("12")
-	gray := lipgloss.Color("240") 
+	gray := lipgloss.Color("240")
 	white := lipgloss.Color("15")
 	red := lipgloss.Color("9")
-	
+
 	// Header
 	title := ""
 	path := ""
-	
+
 	switch m.currentView {
 	case viewDatabases:
 		title = "Metabase Explorer"
@@ -604,15 +586,15 @@ func (m model) View() string {
 		title = "Database Tables"
 		path = fmt.Sprintf("Databases > %s", m.selectedDatabase.Name)
 	case viewFields:
-		title = "Table Schema" 
+		title = "Table Schema"
 		path = fmt.Sprintf("Databases > %s > %s", m.selectedDatabase.Name, m.selectedTable.Name)
 	}
-	
+
 	output.WriteString(lipgloss.NewStyle().Bold(true).Foreground(blue).Render(title))
 	output.WriteString("\n")
 	output.WriteString(lipgloss.NewStyle().Foreground(gray).Render(path))
 	output.WriteString("\n")
-	
+
 	// Always reserve a line for search bar to prevent jumping
 	output.WriteString("\n")
 	if m.searchMode {
@@ -625,9 +607,9 @@ func (m model) View() string {
 	} else if m.numberInput != "" {
 		output.WriteString(lipgloss.NewStyle().Foreground(blue).Render("Select: " + m.numberInput + "_"))
 	}
-	
+
 	output.WriteString("\n\n")
-	
+
 	// Handle loading
 	if m.loading {
 		spinnerChars := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
@@ -638,28 +620,28 @@ func (m model) View() string {
 		output.WriteString(m.getHelpText())
 		return output.String()
 	}
-	
-	// Handle errors  
+
+	// Handle errors
 	if m.error != "" {
 		output.WriteString(lipgloss.NewStyle().Foreground(red).Render("Error: " + m.error))
 		output.WriteString("\n\n")
 		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("Press 'q' to quit"))
 		return output.String()
 	}
-	
+
 	// Render content based on view
 	switch m.currentView {
 	case viewDatabases:
 		m.renderDatabases(&output, blue, gray, white)
 	case viewTables:
-		m.renderTables(&output, blue, gray, white)  
+		m.renderTables(&output, blue, gray, white)
 	case viewFields:
 		m.renderFields(&output, blue, gray, white)
 	}
-	
+
 	output.WriteString("\n")
 	output.WriteString(m.getHelpText())
-	
+
 	return output.String()
 }
 
@@ -669,9 +651,9 @@ func (m *model) updateSearch() {
 		m.filteredIndices = nil
 		return
 	}
-	
+
 	m.filteredIndices = nil
-	
+
 	switch m.currentView {
 	case viewDatabases:
 		var names []string
@@ -709,7 +691,7 @@ func (m *model) updateSearch() {
 			m.filteredIndices = append(m.filteredIndices, match.Index)
 		}
 	}
-	
+
 	// Reset cursor when search results change
 	m.cursor = 0
 }
@@ -717,21 +699,21 @@ func (m *model) updateSearch() {
 func (m model) getHelpText() string {
 	gray := lipgloss.Color("240")
 	blue := lipgloss.Color("12")
-	
+
 	keyStyle := lipgloss.NewStyle().Foreground(blue)
 	descStyle := lipgloss.NewStyle().Foreground(gray)
-	
+
 	if m.searchMode {
 		return keyStyle.Render("esc") + descStyle.Render(" cancel  ") +
 			keyStyle.Render("enter") + descStyle.Render(" select  ") +
 			keyStyle.Render("↑↓") + descStyle.Render(" navigate")
 	} else {
 		var help strings.Builder
-		
+
 		// Navigation group
 		help.WriteString(keyStyle.Render("↑↓"))
 		help.WriteString(descStyle.Render(" navigate  "))
-		
+
 		// Quick select (context-aware)
 		var itemCount int
 		switch m.currentView {
@@ -742,7 +724,7 @@ func (m model) getHelpText() string {
 		case viewFields:
 			itemCount = len(m.fields)
 		}
-		
+
 		if m.currentView != viewFields && itemCount > 0 {
 			if itemCount < 10 {
 				help.WriteString(keyStyle.Render("1-9"))
@@ -751,7 +733,7 @@ func (m model) getHelpText() string {
 			}
 			help.WriteString(descStyle.Render(" select  "))
 		}
-		
+
 		// Actions group
 		help.WriteString(keyStyle.Render("enter"))
 		help.WriteString(descStyle.Render(" open  "))
@@ -759,17 +741,17 @@ func (m model) getHelpText() string {
 		help.WriteString(descStyle.Render(" web  "))
 		help.WriteString(keyStyle.Render("/"))
 		help.WriteString(descStyle.Render(" search  "))
-		
+
 		// Navigation back
 		if m.currentView != viewDatabases {
 			help.WriteString(keyStyle.Render("esc"))
 			help.WriteString(descStyle.Render(" back  "))
 		}
-		
+
 		// Quit
 		help.WriteString(keyStyle.Render("q"))
 		help.WriteString(descStyle.Render(" quit"))
-		
+
 		return help.String()
 	}
 }
@@ -779,11 +761,11 @@ func (m model) renderDatabases(output *strings.Builder, blue, gray, white lipglo
 		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No databases found"))
 		return
 	}
-	
+
 	// Show filtered or all databases
 	var itemsToShow []int
 	var totalCount int
-	
+
 	if m.searchMode && m.searchQuery != "" && len(m.filteredIndices) > 0 {
 		itemsToShow = m.filteredIndices
 		totalCount = len(m.filteredIndices)
@@ -796,10 +778,10 @@ func (m model) renderDatabases(output *strings.Builder, blue, gray, white lipglo
 		}
 		totalCount = len(m.databases)
 	}
-	
+
 	output.WriteString(lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("Found %d database(s)", totalCount)))
 	output.WriteString("\n\n")
-	
+
 	for i, dbIndex := range itemsToShow {
 		db := m.databases[dbIndex]
 		var numberPrefix string
@@ -808,7 +790,7 @@ func (m model) renderDatabases(output *strings.Builder, blue, gray, white lipglo
 		} else {
 			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%02d ", i+1))
 		}
-		
+
 		if i == m.cursor {
 			output.WriteString(numberPrefix)
 			output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("▶ " + db.Name))
@@ -828,11 +810,11 @@ func (m model) renderTables(output *strings.Builder, blue, gray, white lipgloss.
 		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No tables found"))
 		return
 	}
-	
+
 	// Show filtered or all tables
 	var itemsToShow []int
 	var totalCount int
-	
+
 	if m.searchMode && m.searchQuery != "" && len(m.filteredIndices) > 0 {
 		itemsToShow = m.filteredIndices
 		totalCount = len(m.filteredIndices)
@@ -845,24 +827,24 @@ func (m model) renderTables(output *strings.Builder, blue, gray, white lipgloss.
 		}
 		totalCount = len(m.tables)
 	}
-	
+
 	output.WriteString(lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("Found %d table(s)", totalCount)))
 	output.WriteString("\n\n")
-	
+
 	for i, tableIndex := range itemsToShow {
 		table := m.tables[tableIndex]
 		name := table.DisplayName
 		if name == "" {
 			name = table.Name
 		}
-		
+
 		var numberPrefix string
 		if totalCount < 10 {
 			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%d ", i+1))
 		} else {
 			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%02d ", i+1))
 		}
-		
+
 		if i == m.cursor {
 			output.WriteString(numberPrefix)
 			output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("▶ " + name))
@@ -870,14 +852,14 @@ func (m model) renderTables(output *strings.Builder, blue, gray, white lipgloss.
 			output.WriteString(numberPrefix)
 			output.WriteString("  " + name)
 		}
-		
+
 		if table.Schema != "" {
 			output.WriteString(" ")
 			output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("(" + table.Schema + ")"))
 		}
 		output.WriteString("\n")
 	}
-	
+
 }
 
 func (m model) renderFields(output *strings.Builder, blue, gray, white lipgloss.Color) {
@@ -885,11 +867,11 @@ func (m model) renderFields(output *strings.Builder, blue, gray, white lipgloss.
 		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No fields found"))
 		return
 	}
-	
+
 	// Show filtered or all fields
 	var itemsToShow []int
 	var totalCount int
-	
+
 	if m.searchMode && m.searchQuery != "" && len(m.filteredIndices) > 0 {
 		itemsToShow = m.filteredIndices
 		totalCount = len(m.filteredIndices)
@@ -902,19 +884,19 @@ func (m model) renderFields(output *strings.Builder, blue, gray, white lipgloss.
 		}
 		totalCount = len(m.fields)
 	}
-	
+
 	output.WriteString(lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("Found %d field(s)", totalCount)))
 	output.WriteString("\n\n")
-	
+
 	for i, fieldIndex := range itemsToShow {
 		field := m.fields[fieldIndex]
 		name := field.DisplayName
 		if name == "" {
 			name = field.Name
 		}
-		
+
 		numberPrefix := lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%02d ", i+1))
-		
+
 		if i == m.cursor {
 			output.WriteString(numberPrefix)
 			output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("▶ " + name))
@@ -922,23 +904,22 @@ func (m model) renderFields(output *strings.Builder, blue, gray, white lipgloss.
 			output.WriteString(numberPrefix)
 			output.WriteString("  " + name)
 		}
-		
+
 		// Add type info
 		if field.DatabaseType != "" {
 			output.WriteString(" ")
 			output.WriteString(lipgloss.NewStyle().Foreground(gray).Render(field.DatabaseType))
 		}
-		
+
 		if field.SemanticType != "" {
 			output.WriteString(" ")
 			output.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render("[" + field.SemanticType + "]"))
 		}
-		
+
 		output.WriteString("\n")
 	}
-	
-}
 
+}
 
 func main() {
 	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
