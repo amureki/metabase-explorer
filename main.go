@@ -26,6 +26,11 @@ type Database struct {
 	Engine string `json:"engine"`
 }
 
+type Schema struct {
+	Name       string
+	TableCount int
+}
+
 type Table struct {
 	ID          int     `json:"id"`
 	Name        string  `json:"name"`
@@ -240,6 +245,16 @@ func (m model) getWebURL() string {
 			slug := toSlug(db.Name)
 			return fmt.Sprintf("%s/browse/databases/%d-%s", baseURL, db.ID, slug)
 		}
+	case viewSchemas:
+		if len(m.schemas) > 0 && m.cursor < len(m.schemas) && m.selectedDatabase != nil {
+			// Open the specific schema browse page
+			schema := m.schemas[m.cursor]
+			return fmt.Sprintf("%s/browse/databases/%d/schema/%s", baseURL, m.selectedDatabase.ID, schema.Name)
+		} else if m.selectedDatabase != nil {
+			db := m.selectedDatabase
+			slug := toSlug(db.Name)
+			return fmt.Sprintf("%s/browse/databases/%d-%s", baseURL, db.ID, slug)
+		}
 	case viewTables:
 		if len(m.tables) > 0 && m.cursor < len(m.tables) && m.selectedDatabase != nil {
 			// Open the specific table's reference page
@@ -265,12 +280,14 @@ type viewState int
 
 const (
 	viewDatabases viewState = iota
+	viewSchemas
 	viewTables
 	viewFields
 )
 
 type model struct {
 	databases        []Database
+	schemas          []Schema
 	tables           []Table
 	fields           []Field
 	cursor           int
@@ -279,6 +296,7 @@ type model struct {
 	client           *MetabaseClient
 	currentView      viewState
 	selectedDatabase *Database
+	selectedSchema   *Schema
 	selectedTable    *Table
 	searchMode       bool
 	searchQuery      string
@@ -290,6 +308,11 @@ type model struct {
 type databasesLoaded struct {
 	databases []Database
 	err       error
+}
+
+type schemasLoaded struct {
+	schemas []Schema
+	err     error
 }
 
 type tablesLoaded struct {
@@ -315,6 +338,69 @@ func loadTables(client *MetabaseClient, databaseID int) tea.Cmd {
 	return func() tea.Msg {
 		tables, err := client.getTables(databaseID)
 		return tablesLoaded{tables: tables, err: err}
+	}
+}
+
+func loadSchemas(client *MetabaseClient, databaseID int) tea.Cmd {
+	return func() tea.Msg {
+		tables, err := client.getTables(databaseID)
+		if err != nil {
+			return schemasLoaded{err: err}
+		}
+		schemas := extractSchemas(tables)
+		return schemasLoaded{schemas: schemas, err: nil}
+	}
+}
+
+func extractSchemas(tables []Table) []Schema {
+	schemaMap := make(map[string]int)
+	for _, table := range tables {
+		schema := table.Schema
+		if schema == "" {
+			schema = "default"
+		}
+		schemaMap[schema]++
+	}
+	
+	var schemas []Schema
+	for name, count := range schemaMap {
+		schemas = append(schemas, Schema{
+			Name:       name,
+			TableCount: count,
+		})
+	}
+	
+	// Sort schemas by name for consistent display
+	for i := 0; i < len(schemas)-1; i++ {
+		for j := i + 1; j < len(schemas); j++ {
+			if schemas[i].Name > schemas[j].Name {
+				schemas[i], schemas[j] = schemas[j], schemas[i]
+			}
+		}
+	}
+	
+	return schemas
+}
+
+func loadTablesForSchema(client *MetabaseClient, databaseID int, schemaName string) tea.Cmd {
+	return func() tea.Msg {
+		allTables, err := client.getTables(databaseID)
+		if err != nil {
+			return tablesLoaded{err: err}
+		}
+		
+		var filteredTables []Table
+		for _, table := range allTables {
+			tableSchema := table.Schema
+			if tableSchema == "" {
+				tableSchema = "default"
+			}
+			if tableSchema == schemaName {
+				filteredTables = append(filteredTables, table)
+			}
+		}
+		
+		return tablesLoaded{tables: filteredTables, err: nil}
 	}
 }
 
@@ -389,11 +475,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Trigger selection
 					if m.currentView == viewDatabases && len(m.databases) > 0 {
 						m.selectedDatabase = &m.databases[actualIndex]
+						m.currentView = viewSchemas
+						m.cursor = 0
+						m.loading = true
+						m.error = ""
+						return m, tea.Batch(loadSchemas(m.client, m.selectedDatabase.ID), tickSpinner())
+					} else if m.currentView == viewSchemas && len(m.schemas) > 0 {
+						m.selectedSchema = &m.schemas[actualIndex]
 						m.currentView = viewTables
 						m.cursor = 0
 						m.loading = true
 						m.error = ""
-						return m, tea.Batch(loadTables(m.client, m.selectedDatabase.ID), tickSpinner())
+						return m, tea.Batch(loadTablesForSchema(m.client, m.selectedDatabase.ID, m.selectedSchema.Name), tickSpinner())
 					} else if m.currentView == viewTables && len(m.tables) > 0 {
 						m.selectedTable = &m.tables[actualIndex]
 						m.currentView = viewFields
@@ -444,6 +537,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch m.currentView {
 			case viewDatabases:
 				itemCount = len(m.databases)
+			case viewSchemas:
+				itemCount = len(m.schemas)
 			case viewTables:
 				itemCount = len(m.tables)
 			case viewFields:
@@ -470,22 +565,57 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.numberInput = "" // Clear number input when using arrow keys
 			if m.currentView == viewDatabases && m.cursor < len(m.databases)-1 {
 				m.cursor++
+			} else if m.currentView == viewSchemas && m.cursor < len(m.schemas)-1 {
+				m.cursor++
 			} else if m.currentView == viewTables && m.cursor < len(m.tables)-1 {
 				m.cursor++
 			} else if m.currentView == viewFields && m.cursor < len(m.fields)-1 {
 				m.cursor++
 			}
-		case "enter":
+		case "right", "l":
 			// Clear number input after navigation
 			m.numberInput = ""
 
 			if m.currentView == viewDatabases && len(m.databases) > 0 {
 				m.selectedDatabase = &m.databases[m.cursor]
+				m.currentView = viewSchemas
+				m.cursor = 0
+				m.loading = true
+				m.error = ""
+				return m, tea.Batch(loadSchemas(m.client, m.selectedDatabase.ID), tickSpinner())
+			} else if m.currentView == viewSchemas && len(m.schemas) > 0 {
+				m.selectedSchema = &m.schemas[m.cursor]
 				m.currentView = viewTables
 				m.cursor = 0
 				m.loading = true
 				m.error = ""
-				return m, tea.Batch(loadTables(m.client, m.selectedDatabase.ID), tickSpinner())
+				return m, tea.Batch(loadTablesForSchema(m.client, m.selectedDatabase.ID, m.selectedSchema.Name), tickSpinner())
+			} else if m.currentView == viewTables && len(m.tables) > 0 {
+				m.selectedTable = &m.tables[m.cursor]
+				m.currentView = viewFields
+				m.cursor = 0
+				m.loading = true
+				m.error = ""
+				return m, tea.Batch(loadFields(m.client, m.selectedTable.ID), tickSpinner())
+			}
+		case "enter":
+			// Keep Enter as alternative to right arrow
+			m.numberInput = ""
+
+			if m.currentView == viewDatabases && len(m.databases) > 0 {
+				m.selectedDatabase = &m.databases[m.cursor]
+				m.currentView = viewSchemas
+				m.cursor = 0
+				m.loading = true
+				m.error = ""
+				return m, tea.Batch(loadSchemas(m.client, m.selectedDatabase.ID), tickSpinner())
+			} else if m.currentView == viewSchemas && len(m.schemas) > 0 {
+				m.selectedSchema = &m.schemas[m.cursor]
+				m.currentView = viewTables
+				m.cursor = 0
+				m.loading = true
+				m.error = ""
+				return m, tea.Batch(loadTablesForSchema(m.client, m.selectedDatabase.ID, m.selectedSchema.Name), tickSpinner())
 			} else if m.currentView == viewTables && len(m.tables) > 0 {
 				m.selectedTable = &m.tables[m.cursor]
 				m.currentView = viewFields
@@ -499,14 +629,40 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if err := openInBrowser(webURL); err != nil {
 				m.error = fmt.Sprintf("Failed to open browser: %v", err)
 			}
-		case "backspace":
+		case "left", "h":
 			if m.numberInput != "" {
 				// Clear number input
 				m.numberInput = ""
-			} else if m.currentView == viewTables {
+			} else if m.currentView == viewSchemas {
 				m.currentView = viewDatabases
 				m.cursor = 0
 				m.selectedDatabase = nil
+				m.schemas = nil
+			} else if m.currentView == viewTables {
+				m.currentView = viewSchemas
+				m.cursor = 0
+				m.selectedSchema = nil
+				m.tables = nil
+			} else if m.currentView == viewFields {
+				m.currentView = viewTables
+				m.cursor = 0
+				m.selectedTable = nil
+				m.fields = nil
+			}
+		case "backspace":
+			// Keep backspace as alternative to left arrow
+			if m.numberInput != "" {
+				// Clear number input
+				m.numberInput = ""
+			} else if m.currentView == viewSchemas {
+				m.currentView = viewDatabases
+				m.cursor = 0
+				m.selectedDatabase = nil
+				m.schemas = nil
+			} else if m.currentView == viewTables {
+				m.currentView = viewSchemas
+				m.cursor = 0
+				m.selectedSchema = nil
 				m.tables = nil
 			} else if m.currentView == viewFields {
 				m.currentView = viewTables
@@ -518,10 +674,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.numberInput != "" {
 				// Clear number input
 				m.numberInput = ""
-			} else if m.currentView == viewTables {
+			} else if m.currentView == viewSchemas {
 				m.currentView = viewDatabases
 				m.cursor = 0
 				m.selectedDatabase = nil
+				m.schemas = nil
+			} else if m.currentView == viewTables {
+				m.currentView = viewSchemas
+				m.cursor = 0
+				m.selectedSchema = nil
 				m.tables = nil
 			} else if m.currentView == viewFields {
 				m.currentView = viewTables
@@ -537,6 +698,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.error = msg.err.Error()
 		} else {
 			m.databases = msg.databases
+		}
+
+	case schemasLoaded:
+		m.loading = false
+		if msg.err != nil {
+			m.error = msg.err.Error()
+		} else {
+			m.schemas = msg.schemas
+			// Auto-skip schema view if only one schema
+			if len(m.schemas) == 1 {
+				m.selectedSchema = &m.schemas[0]
+				m.currentView = viewTables
+				m.cursor = 0
+				m.loading = true
+				return m, tea.Batch(loadTablesForSchema(m.client, m.selectedDatabase.ID, m.selectedSchema.Name), tickSpinner())
+			}
 		}
 
 	case tablesLoaded:
@@ -581,13 +758,36 @@ func (m model) View() string {
 	switch m.currentView {
 	case viewDatabases:
 		title = "Metabase Explorer"
-		path = "Databases"
+		if len(m.databases) > 0 {
+			path = fmt.Sprintf("Databases (%d)", len(m.databases))
+		} else {
+			path = "Databases"
+		}
+	case viewSchemas:
+		title = "Database Schemas"
+		if len(m.schemas) > 0 {
+			path = fmt.Sprintf("Databases > %s (%d)", m.selectedDatabase.Name, len(m.schemas))
+		} else {
+			path = fmt.Sprintf("Databases > %s", m.selectedDatabase.Name)
+		}
 	case viewTables:
-		title = "Database Tables"
-		path = fmt.Sprintf("Databases > %s", m.selectedDatabase.Name)
+		title = "Schema Tables"
+		if len(m.tables) > 0 {
+			path = fmt.Sprintf("Databases > %s > %s (%d)", m.selectedDatabase.Name, m.selectedSchema.Name, len(m.tables))
+		} else {
+			path = fmt.Sprintf("Databases > %s > %s", m.selectedDatabase.Name, m.selectedSchema.Name)
+		}
 	case viewFields:
 		title = "Table Schema"
-		path = fmt.Sprintf("Databases > %s > %s", m.selectedDatabase.Name, m.selectedTable.Name)
+		tableName := m.selectedTable.DisplayName
+		if tableName == "" {
+			tableName = m.selectedTable.Name
+		}
+		if len(m.fields) > 0 {
+			path = fmt.Sprintf("Databases > %s > %s > %s (%d)", m.selectedDatabase.Name, m.selectedSchema.Name, tableName, len(m.fields))
+		} else {
+			path = fmt.Sprintf("Databases > %s > %s > %s", m.selectedDatabase.Name, m.selectedSchema.Name, tableName)
+		}
 	}
 
 	output.WriteString(lipgloss.NewStyle().Bold(true).Foreground(blue).Render(title))
@@ -633,6 +833,8 @@ func (m model) View() string {
 	switch m.currentView {
 	case viewDatabases:
 		m.renderDatabases(&output, blue, gray, white)
+	case viewSchemas:
+		m.renderSchemas(&output, blue, gray, white)
 	case viewTables:
 		m.renderTables(&output, blue, gray, white)
 	case viewFields:
@@ -659,6 +861,15 @@ func (m *model) updateSearch() {
 		var names []string
 		for _, db := range m.databases {
 			names = append(names, db.Name)
+		}
+		matches := fuzzy.Find(m.searchQuery, names)
+		for _, match := range matches {
+			m.filteredIndices = append(m.filteredIndices, match.Index)
+		}
+	case viewSchemas:
+		var names []string
+		for _, schema := range m.schemas {
+			names = append(names, schema.Name)
 		}
 		matches := fuzzy.Find(m.searchQuery, names)
 		for _, match := range matches {
@@ -710,15 +921,23 @@ func (m model) getHelpText() string {
 	} else {
 		var help strings.Builder
 
-		// Navigation group
-		help.WriteString(keyStyle.Render("↑↓"))
-		help.WriteString(descStyle.Render(" navigate  "))
+		// Navigation section - combine all arrows
+		var navigation strings.Builder
+		if m.currentView != viewDatabases {
+			navigation.WriteString(keyStyle.Render("↑↓←→"))
+			navigation.WriteString(descStyle.Render(" navigate  "))
+		} else {
+			navigation.WriteString(keyStyle.Render("↑↓→"))
+			navigation.WriteString(descStyle.Render(" navigate  "))
+		}
 
 		// Quick select (context-aware)
 		var itemCount int
 		switch m.currentView {
 		case viewDatabases:
 			itemCount = len(m.databases)
+		case viewSchemas:
+			itemCount = len(m.schemas)
 		case viewTables:
 			itemCount = len(m.tables)
 		case viewFields:
@@ -727,30 +946,26 @@ func (m model) getHelpText() string {
 
 		if m.currentView != viewFields && itemCount > 0 {
 			if itemCount < 10 {
-				help.WriteString(keyStyle.Render("1-9"))
+				navigation.WriteString(keyStyle.Render("1-9"))
 			} else {
-				help.WriteString(keyStyle.Render("01-99"))
+				navigation.WriteString(keyStyle.Render("01-99"))
 			}
-			help.WriteString(descStyle.Render(" select  "))
+			navigation.WriteString(descStyle.Render(" select"))
 		}
 
-		// Actions group
-		help.WriteString(keyStyle.Render("enter"))
-		help.WriteString(descStyle.Render(" open  "))
-		help.WriteString(keyStyle.Render("w"))
-		help.WriteString(descStyle.Render(" web  "))
-		help.WriteString(keyStyle.Render("/"))
-		help.WriteString(descStyle.Render(" search  "))
+		// Actions section
+		var actions strings.Builder
+		actions.WriteString(keyStyle.Render("w"))
+		actions.WriteString(descStyle.Render(" web  "))
+		actions.WriteString(keyStyle.Render("/"))
+		actions.WriteString(descStyle.Render(" search  "))
+		actions.WriteString(keyStyle.Render("q"))
+		actions.WriteString(descStyle.Render(" quit"))
 
-		// Navigation back
-		if m.currentView != viewDatabases {
-			help.WriteString(keyStyle.Render("esc"))
-			help.WriteString(descStyle.Render(" back  "))
-		}
-
-		// Quit
-		help.WriteString(keyStyle.Render("q"))
-		help.WriteString(descStyle.Render(" quit"))
+		// Combine sections on separate lines
+		help.WriteString(navigation.String())
+		help.WriteString("\n")
+		help.WriteString(actions.String())
 
 		return help.String()
 	}
@@ -764,11 +979,9 @@ func (m model) renderDatabases(output *strings.Builder, blue, gray, white lipglo
 
 	// Show filtered or all databases
 	var itemsToShow []int
-	var totalCount int
 
 	if m.searchMode && m.searchQuery != "" && len(m.filteredIndices) > 0 {
 		itemsToShow = m.filteredIndices
-		totalCount = len(m.filteredIndices)
 	} else if m.searchMode && m.searchQuery != "" {
 		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No matches found"))
 		return
@@ -776,16 +989,13 @@ func (m model) renderDatabases(output *strings.Builder, blue, gray, white lipglo
 		for i := range m.databases {
 			itemsToShow = append(itemsToShow, i)
 		}
-		totalCount = len(m.databases)
 	}
 
-	output.WriteString(lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("Found %d database(s)", totalCount)))
-	output.WriteString("\n\n")
 
 	for i, dbIndex := range itemsToShow {
 		db := m.databases[dbIndex]
 		var numberPrefix string
-		if totalCount < 10 {
+		if len(m.databases) < 10 {
 			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%d ", i+1))
 		} else {
 			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%02d ", i+1))
@@ -805,6 +1015,49 @@ func (m model) renderDatabases(output *strings.Builder, blue, gray, white lipglo
 	}
 }
 
+func (m model) renderSchemas(output *strings.Builder, blue, gray, white lipgloss.Color) {
+	if len(m.schemas) == 0 {
+		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No schemas found"))
+		return
+	}
+
+	// Show filtered or all schemas
+	var itemsToShow []int
+
+	if m.searchMode && m.searchQuery != "" && len(m.filteredIndices) > 0 {
+		itemsToShow = m.filteredIndices
+	} else if m.searchMode && m.searchQuery != "" {
+		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No matches found"))
+		return
+	} else {
+		for i := range m.schemas {
+			itemsToShow = append(itemsToShow, i)
+		}
+	}
+
+	for i, schemaIndex := range itemsToShow {
+		schema := m.schemas[schemaIndex]
+		var numberPrefix string
+		if len(m.schemas) < 10 {
+			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%d ", i+1))
+		} else {
+			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%02d ", i+1))
+		}
+
+		if i == m.cursor {
+			output.WriteString(numberPrefix)
+			output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("▶ " + schema.Name))
+			output.WriteString(" ")
+			output.WriteString(lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("(%d tables)", schema.TableCount)))
+		} else {
+			output.WriteString(numberPrefix)
+			output.WriteString("  " + schema.Name + " ")
+			output.WriteString(lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("(%d tables)", schema.TableCount)))
+		}
+		output.WriteString("\n")
+	}
+}
+
 func (m model) renderTables(output *strings.Builder, blue, gray, white lipgloss.Color) {
 	if len(m.tables) == 0 {
 		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No tables found"))
@@ -813,11 +1066,9 @@ func (m model) renderTables(output *strings.Builder, blue, gray, white lipgloss.
 
 	// Show filtered or all tables
 	var itemsToShow []int
-	var totalCount int
 
 	if m.searchMode && m.searchQuery != "" && len(m.filteredIndices) > 0 {
 		itemsToShow = m.filteredIndices
-		totalCount = len(m.filteredIndices)
 	} else if m.searchMode && m.searchQuery != "" {
 		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No matches found"))
 		return
@@ -825,11 +1076,8 @@ func (m model) renderTables(output *strings.Builder, blue, gray, white lipgloss.
 		for i := range m.tables {
 			itemsToShow = append(itemsToShow, i)
 		}
-		totalCount = len(m.tables)
 	}
 
-	output.WriteString(lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("Found %d table(s)", totalCount)))
-	output.WriteString("\n\n")
 
 	for i, tableIndex := range itemsToShow {
 		table := m.tables[tableIndex]
@@ -839,7 +1087,7 @@ func (m model) renderTables(output *strings.Builder, blue, gray, white lipgloss.
 		}
 
 		var numberPrefix string
-		if totalCount < 10 {
+		if len(m.tables) < 10 {
 			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%d ", i+1))
 		} else {
 			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%02d ", i+1))
@@ -853,10 +1101,6 @@ func (m model) renderTables(output *strings.Builder, blue, gray, white lipgloss.
 			output.WriteString("  " + name)
 		}
 
-		if table.Schema != "" {
-			output.WriteString(" ")
-			output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("(" + table.Schema + ")"))
-		}
 		output.WriteString("\n")
 	}
 
@@ -870,11 +1114,9 @@ func (m model) renderFields(output *strings.Builder, blue, gray, white lipgloss.
 
 	// Show filtered or all fields
 	var itemsToShow []int
-	var totalCount int
 
 	if m.searchMode && m.searchQuery != "" && len(m.filteredIndices) > 0 {
 		itemsToShow = m.filteredIndices
-		totalCount = len(m.filteredIndices)
 	} else if m.searchMode && m.searchQuery != "" {
 		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No matches found"))
 		return
@@ -882,11 +1124,8 @@ func (m model) renderFields(output *strings.Builder, blue, gray, white lipgloss.
 		for i := range m.fields {
 			itemsToShow = append(itemsToShow, i)
 		}
-		totalCount = len(m.fields)
 	}
 
-	output.WriteString(lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("Found %d field(s)", totalCount)))
-	output.WriteString("\n\n")
 
 	for i, fieldIndex := range itemsToShow {
 		field := m.fields[fieldIndex]

@@ -1,4 +1,4 @@
-module metabase-tui
+module github.com/amureki/metabase-explorer
 
 go 1.23.0
 
