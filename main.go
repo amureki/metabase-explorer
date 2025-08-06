@@ -1,0 +1,875 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"net/url"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/joho/godotenv"
+	"github.com/sahilm/fuzzy"
+)
+
+
+type Database struct {
+	ID     int    `json:"id"`
+	Name   string `json:"name"`
+	Engine string `json:"engine"`
+}
+
+type Table struct {
+	ID           int     `json:"id"`
+	Name         string  `json:"name"`
+	DisplayName  string  `json:"display_name"`
+	Schema       string  `json:"schema"`
+	Description  string  `json:"description"`
+	Fields       []Field `json:"fields"`
+}
+
+type Field struct {
+	ID              int    `json:"id"`
+	Name            string `json:"name"`
+	DisplayName     string `json:"display_name"`
+	Description     string `json:"description"`
+	BaseType        string `json:"base_type"`
+	EffectiveType   string `json:"effective_type"`
+	SemanticType    string `json:"semantic_type"`
+	DatabaseType    string `json:"database_type"`
+	TableID         int    `json:"table_id"`
+	Position        int    `json:"position"`
+	Active          bool   `json:"active"`
+	PreviewDisplay  bool   `json:"preview_display"`
+	Visibility      string `json:"visibility_type"`
+}
+
+type MetabaseClient struct {
+	baseURL    string
+	apiToken   string
+	httpClient *http.Client
+}
+
+func NewMetabaseClient(baseURL, apiToken string) *MetabaseClient {
+	return &MetabaseClient{
+		baseURL:    baseURL,
+		apiToken:   apiToken,
+		httpClient: &http.Client{},
+	}
+}
+
+func (c *MetabaseClient) testConnection() error {
+	baseURL, err := url.Parse(c.baseURL)
+	if err != nil {
+		return fmt.Errorf("invalid base URL: %v", err)
+	}
+	
+	apiURL, err := baseURL.Parse("/api/user/current")
+	if err != nil {
+		return fmt.Errorf("failed to construct API URL: %v", err)
+	}
+
+	req, _ := http.NewRequest("GET", apiURL.String(), nil)
+	req.Header.Set("X-API-Key", c.apiToken)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API token authentication failed with status: %d - %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
+func (c *MetabaseClient) getDatabases() ([]Database, error) {
+	baseURL, err := url.Parse(c.baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base URL: %v", err)
+	}
+	
+	apiURL, err := baseURL.Parse("/api/database")
+	if err != nil {
+		return nil, fmt.Errorf("failed to construct API URL: %v", err)
+	}
+
+	req, _ := http.NewRequest("GET", apiURL.String(), nil)
+	req.Header.Set("X-API-Key", c.apiToken)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to get databases: %d - %s", resp.StatusCode, string(body))
+	}
+
+	var result map[string][]Database
+	json.NewDecoder(resp.Body).Decode(&result)
+	return result["data"], nil
+}
+
+func (c *MetabaseClient) getTables(databaseID int) ([]Table, error) {
+	baseURL, err := url.Parse(c.baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base URL: %v", err)
+	}
+	
+	apiURL, err := baseURL.Parse(fmt.Sprintf("/api/database/%d/metadata", databaseID))
+	if err != nil {
+		return nil, fmt.Errorf("failed to construct API URL: %v", err)
+	}
+
+	req, _ := http.NewRequest("GET", apiURL.String(), nil)
+	req.Header.Set("X-API-Key", c.apiToken)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to get tables: %d - %s", resp.StatusCode, string(body))
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	var metadata struct {
+		Tables []Table `json:"tables"`
+	}
+	
+	if err := json.Unmarshal(body, &metadata); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %v", err)
+	}
+	
+	return metadata.Tables, nil
+}
+
+func (c *MetabaseClient) getTableFields(tableID int) ([]Field, error) {
+	baseURL, err := url.Parse(c.baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base URL: %v", err)
+	}
+	
+	apiURL, err := baseURL.Parse(fmt.Sprintf("/api/table/%d/query_metadata", tableID))
+	if err != nil {
+		return nil, fmt.Errorf("failed to construct API URL: %v", err)
+	}
+
+	req, _ := http.NewRequest("GET", apiURL.String(), nil)
+	req.Header.Set("X-API-Key", c.apiToken)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to get table fields: %d - %s", resp.StatusCode, string(body))
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	var queryMeta struct {
+		Fields []Field `json:"fields"`
+	}
+	
+	if err := json.Unmarshal(body, &queryMeta); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %v", err)
+	}
+	
+	return queryMeta.Fields, nil
+}
+
+type viewState int
+
+const (
+	viewDatabases viewState = iota
+	viewTables
+	viewFields
+)
+
+type model struct {
+	databases        []Database
+	tables           []Table
+	fields           []Field
+	cursor           int
+	loading          bool
+	error            string
+	client           *MetabaseClient
+	currentView      viewState
+	selectedDatabase *Database
+	selectedTable    *Table
+	searchMode       bool
+	searchQuery      string
+	filteredIndices  []int
+	spinnerIndex     int
+	numberInput      string
+}
+
+type databasesLoaded struct {
+	databases []Database
+	err       error
+}
+
+type tablesLoaded struct {
+	tables []Table
+	err    error
+}
+
+type fieldsLoaded struct {
+	fields []Field
+	err    error
+}
+
+type spinnerTick struct{}
+
+func loadDatabases(client *MetabaseClient) tea.Cmd {
+	return func() tea.Msg {
+		databases, err := client.getDatabases()
+		return databasesLoaded{databases: databases, err: err}
+	}
+}
+
+func loadTables(client *MetabaseClient, databaseID int) tea.Cmd {
+	return func() tea.Msg {
+		tables, err := client.getTables(databaseID)
+		return tablesLoaded{tables: tables, err: err}
+	}
+}
+
+func loadFields(client *MetabaseClient, tableID int) tea.Cmd {
+	return func() tea.Msg {
+		fields, err := client.getTableFields(tableID)
+		return fieldsLoaded{fields: fields, err: err}
+	}
+}
+
+func tickSpinner() tea.Cmd {
+	return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg {
+		return spinnerTick{}
+	})
+}
+
+func initialModel() model {
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
+	metabaseURL := os.Getenv("METABASE_URL")
+	apiToken := os.Getenv("METABASE_API_TOKEN")
+
+	if metabaseURL == "" || apiToken == "" {
+		log.Fatal("METABASE_URL and METABASE_API_TOKEN must be set in .env file")
+	}
+
+	client := NewMetabaseClient(metabaseURL, apiToken)
+	return model{
+		loading:     true,
+		client:      client,
+		currentView: viewDatabases,
+	}
+}
+
+func (m model) Init() tea.Cmd {
+	return tea.Batch(
+		func() tea.Msg {
+			err := m.client.testConnection()
+			if err != nil {
+				return databasesLoaded{err: err}
+			}
+			return nil
+		},
+		loadDatabases(m.client),
+		tickSpinner(),
+	)
+}
+
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		// Handle search mode
+		if m.searchMode {
+			switch msg.String() {
+			case "esc":
+				m.searchMode = false
+				m.searchQuery = ""
+				m.filteredIndices = nil
+				m.cursor = 0
+			case "enter":
+				// Select from filtered results
+				if len(m.filteredIndices) > 0 && m.cursor < len(m.filteredIndices) {
+					actualIndex := m.filteredIndices[m.cursor]
+					m.cursor = actualIndex
+					m.searchMode = false
+					m.searchQuery = ""
+					m.filteredIndices = nil
+					
+					// Trigger selection
+					if m.currentView == viewDatabases && len(m.databases) > 0 {
+						m.selectedDatabase = &m.databases[actualIndex]
+						m.currentView = viewTables
+						m.cursor = 0
+						m.loading = true
+						m.error = ""
+						return m, tea.Batch(loadTables(m.client, m.selectedDatabase.ID), tickSpinner())
+					} else if m.currentView == viewTables && len(m.tables) > 0 {
+						m.selectedTable = &m.tables[actualIndex]
+						m.currentView = viewFields
+						m.cursor = 0
+						m.loading = true
+						m.error = ""
+						return m, tea.Batch(loadFields(m.client, m.selectedTable.ID), tickSpinner())
+					}
+				}
+			case "backspace":
+				if len(m.searchQuery) > 0 {
+					m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
+					m.updateSearch()
+				}
+			case "up", "k":
+				if m.cursor > 0 {
+					m.cursor--
+				}
+			case "down", "j":
+				if len(m.filteredIndices) > 0 && m.cursor < len(m.filteredIndices)-1 {
+					m.cursor++
+				}
+			default:
+				// Add character to search query
+				if len(msg.String()) == 1 {
+					m.searchQuery += msg.String()
+					m.updateSearch()
+				}
+			}
+			return m, nil
+		}
+		
+		// Normal navigation mode
+		switch msg.String() {
+		case "ctrl+c", "q":
+			return m, tea.Quit
+		case "/":
+			m.searchMode = true
+			m.searchQuery = ""
+			m.cursor = 0
+			return m, nil
+		case "0", "1", "2", "3", "4", "5", "6", "7", "8", "9":
+			// Build up number input
+			m.numberInput += msg.String()
+			
+			// Get current item count for validation
+			var itemCount int
+			switch m.currentView {
+			case viewDatabases:
+				itemCount = len(m.databases)
+			case viewTables:
+				itemCount = len(m.tables)
+			case viewFields:
+				itemCount = len(m.fields)
+			}
+			
+			// Try to parse and execute if it's a valid selection
+			if num, err := strconv.Atoi(m.numberInput); err == nil && num >= 1 && num <= itemCount {
+				// For single digit numbers with < 10 items, execute immediately
+				// For double digit numbers, wait for complete input or execute if it's the only possibility
+				shouldExecute := false
+				if itemCount < 10 || len(m.numberInput) == 2 || num*10 > itemCount {
+					shouldExecute = true
+				}
+				
+				if shouldExecute {
+					index := num - 1 // Convert to 0-based index
+					m.numberInput = "" // Clear input
+					
+					if m.currentView == viewDatabases {
+						m.selectedDatabase = &m.databases[index]
+						m.currentView = viewTables
+						m.cursor = 0
+						m.loading = true
+						m.error = ""
+						return m, tea.Batch(loadTables(m.client, m.selectedDatabase.ID), tickSpinner())
+					} else if m.currentView == viewTables {
+						m.selectedTable = &m.tables[index]
+						m.currentView = viewFields
+						m.cursor = 0
+						m.loading = true
+						m.error = ""
+						return m, tea.Batch(loadFields(m.client, m.selectedTable.ID), tickSpinner())
+					}
+				}
+			} else if len(m.numberInput) >= 2 {
+				// Invalid number, clear input
+				m.numberInput = ""
+			}
+		case "up", "k":
+			if m.cursor > 0 {
+				m.cursor--
+			}
+		case "down", "j":
+			if m.currentView == viewDatabases && m.cursor < len(m.databases)-1 {
+				m.cursor++
+			} else if m.currentView == viewTables && m.cursor < len(m.tables)-1 {
+				m.cursor++
+			} else if m.currentView == viewFields && m.cursor < len(m.fields)-1 {
+				m.cursor++
+			}
+		case "enter":
+			if m.currentView == viewDatabases && len(m.databases) > 0 {
+				m.selectedDatabase = &m.databases[m.cursor]
+				m.currentView = viewTables
+				m.cursor = 0
+				m.loading = true
+				m.error = ""
+				return m, tea.Batch(loadTables(m.client, m.selectedDatabase.ID), tickSpinner())
+			} else if m.currentView == viewTables && len(m.tables) > 0 {
+				m.selectedTable = &m.tables[m.cursor]
+				m.currentView = viewFields
+				m.cursor = 0
+				m.loading = true
+				m.error = ""
+				return m, tea.Batch(loadFields(m.client, m.selectedTable.ID), tickSpinner())
+			}
+		case "backspace":
+			if m.numberInput != "" {
+				// Clear number input
+				m.numberInput = ""
+			} else if m.currentView == viewTables {
+				m.currentView = viewDatabases
+				m.cursor = 0
+				m.selectedDatabase = nil
+				m.tables = nil
+			} else if m.currentView == viewFields {
+				m.currentView = viewTables
+				m.cursor = 0
+				m.selectedTable = nil
+				m.fields = nil
+			}
+		case "esc":
+			if m.numberInput != "" {
+				// Clear number input
+				m.numberInput = ""
+			} else if m.currentView == viewTables {
+				m.currentView = viewDatabases
+				m.cursor = 0
+				m.selectedDatabase = nil
+				m.tables = nil
+			} else if m.currentView == viewFields {
+				m.currentView = viewTables
+				m.cursor = 0
+				m.selectedTable = nil
+				m.fields = nil
+			}
+		}
+
+	case databasesLoaded:
+		m.loading = false
+		if msg.err != nil {
+			m.error = msg.err.Error()
+		} else {
+			m.databases = msg.databases
+		}
+		
+	case tablesLoaded:
+		m.loading = false
+		if msg.err != nil {
+			m.error = msg.err.Error()
+		} else {
+			m.tables = msg.tables
+		}
+		
+	case fieldsLoaded:
+		m.loading = false
+		if msg.err != nil {
+			m.error = msg.err.Error()
+		} else {
+			m.fields = msg.fields
+		}
+		
+	case spinnerTick:
+		if m.loading {
+			m.spinnerIndex = (m.spinnerIndex + 1) % 10
+			return m, tickSpinner()
+		}
+	}
+
+	return m, nil
+}
+
+func (m model) View() string {
+	var output strings.Builder
+	
+	// Colors
+	blue := lipgloss.Color("12")
+	gray := lipgloss.Color("240") 
+	white := lipgloss.Color("15")
+	red := lipgloss.Color("9")
+	
+	// Header
+	title := ""
+	path := ""
+	
+	switch m.currentView {
+	case viewDatabases:
+		title = "Metabase Explorer"
+		path = "Databases"
+	case viewTables:
+		title = "Database Tables"
+		path = fmt.Sprintf("Databases > %s", m.selectedDatabase.Name)
+	case viewFields:
+		title = "Table Schema" 
+		path = fmt.Sprintf("Databases > %s > %s", m.selectedDatabase.Name, m.selectedTable.Name)
+	}
+	
+	output.WriteString(lipgloss.NewStyle().Bold(true).Foreground(blue).Render(title))
+	output.WriteString("\n")
+	output.WriteString(lipgloss.NewStyle().Foreground(gray).Render(path))
+	output.WriteString("\n")
+	
+	// Always reserve a line for search bar to prevent jumping
+	output.WriteString("\n")
+	if m.searchMode {
+		searchPrompt := "/" + m.searchQuery + "_"
+		output.WriteString(lipgloss.NewStyle().Foreground(blue).Render("Search: " + searchPrompt))
+		if len(m.filteredIndices) > 0 {
+			output.WriteString(" ")
+			output.WriteString(lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("(%d matches)", len(m.filteredIndices))))
+		}
+	} else if m.numberInput != "" {
+		output.WriteString(lipgloss.NewStyle().Foreground(blue).Render("Select: " + m.numberInput + "_"))
+	}
+	
+	output.WriteString("\n\n")
+	
+	// Handle loading
+	if m.loading {
+		spinnerChars := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+		spinner := spinnerChars[m.spinnerIndex%len(spinnerChars)]
+		loadingMsg := spinner + " Loading..."
+		output.WriteString(lipgloss.NewStyle().Foreground(blue).Render(loadingMsg))
+		output.WriteString("\n\n")
+		output.WriteString(m.getHelpText())
+		return output.String()
+	}
+	
+	// Handle errors  
+	if m.error != "" {
+		output.WriteString(lipgloss.NewStyle().Foreground(red).Render("Error: " + m.error))
+		output.WriteString("\n\n")
+		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("Press 'q' to quit"))
+		return output.String()
+	}
+	
+	// Render content based on view
+	switch m.currentView {
+	case viewDatabases:
+		m.renderDatabases(&output, blue, gray, white)
+	case viewTables:
+		m.renderTables(&output, blue, gray, white)  
+	case viewFields:
+		m.renderFields(&output, blue, gray, white)
+	}
+	
+	output.WriteString("\n")
+	output.WriteString(m.getHelpText())
+	
+	return output.String()
+}
+
+func (m *model) updateSearch() {
+	// Only filter if we have actual search query content
+	if !m.searchMode || m.searchQuery == "" {
+		m.filteredIndices = nil
+		return
+	}
+	
+	m.filteredIndices = nil
+	
+	switch m.currentView {
+	case viewDatabases:
+		var names []string
+		for _, db := range m.databases {
+			names = append(names, db.Name)
+		}
+		matches := fuzzy.Find(m.searchQuery, names)
+		for _, match := range matches {
+			m.filteredIndices = append(m.filteredIndices, match.Index)
+		}
+	case viewTables:
+		var names []string
+		for _, table := range m.tables {
+			name := table.DisplayName
+			if name == "" {
+				name = table.Name
+			}
+			names = append(names, name)
+		}
+		matches := fuzzy.Find(m.searchQuery, names)
+		for _, match := range matches {
+			m.filteredIndices = append(m.filteredIndices, match.Index)
+		}
+	case viewFields:
+		var names []string
+		for _, field := range m.fields {
+			name := field.DisplayName
+			if name == "" {
+				name = field.Name
+			}
+			names = append(names, name)
+		}
+		matches := fuzzy.Find(m.searchQuery, names)
+		for _, match := range matches {
+			m.filteredIndices = append(m.filteredIndices, match.Index)
+		}
+	}
+	
+	// Reset cursor when search results change
+	m.cursor = 0
+}
+
+func (m model) getHelpText() string {
+	gray := lipgloss.Color("240")
+	blue := lipgloss.Color("12")
+	
+	keyStyle := lipgloss.NewStyle().Foreground(blue)
+	descStyle := lipgloss.NewStyle().Foreground(gray)
+	
+	if m.searchMode {
+		return keyStyle.Render("esc") + descStyle.Render(" cancel  ") +
+			keyStyle.Render("enter") + descStyle.Render(" select  ") +
+			keyStyle.Render("↑↓") + descStyle.Render(" navigate")
+	} else {
+		var help strings.Builder
+		
+		// Navigation group
+		help.WriteString(keyStyle.Render("↑↓"))
+		help.WriteString(descStyle.Render(" navigate  "))
+		
+		// Quick select (context-aware)
+		var itemCount int
+		switch m.currentView {
+		case viewDatabases:
+			itemCount = len(m.databases)
+		case viewTables:
+			itemCount = len(m.tables)
+		case viewFields:
+			itemCount = len(m.fields)
+		}
+		
+		if m.currentView != viewFields && itemCount > 0 {
+			if itemCount < 10 {
+				help.WriteString(keyStyle.Render("1-9"))
+			} else {
+				help.WriteString(keyStyle.Render("01-99"))
+			}
+			help.WriteString(descStyle.Render(" select  "))
+		}
+		
+		// Actions group
+		help.WriteString(keyStyle.Render("enter"))
+		help.WriteString(descStyle.Render(" open  "))
+		help.WriteString(keyStyle.Render("/"))
+		help.WriteString(descStyle.Render(" search  "))
+		
+		// Navigation back
+		if m.currentView != viewDatabases {
+			help.WriteString(keyStyle.Render("esc"))
+			help.WriteString(descStyle.Render(" back  "))
+		}
+		
+		// Quit
+		help.WriteString(keyStyle.Render("q"))
+		help.WriteString(descStyle.Render(" quit"))
+		
+		return help.String()
+	}
+}
+
+func (m model) renderDatabases(output *strings.Builder, blue, gray, white lipgloss.Color) {
+	if len(m.databases) == 0 {
+		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No databases found"))
+		return
+	}
+	
+	// Show filtered or all databases
+	var itemsToShow []int
+	var totalCount int
+	
+	if m.searchMode && m.searchQuery != "" && len(m.filteredIndices) > 0 {
+		itemsToShow = m.filteredIndices
+		totalCount = len(m.filteredIndices)
+	} else if m.searchMode && m.searchQuery != "" {
+		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No matches found"))
+		return
+	} else {
+		for i := range m.databases {
+			itemsToShow = append(itemsToShow, i)
+		}
+		totalCount = len(m.databases)
+	}
+	
+	output.WriteString(lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("Found %d database(s)", totalCount)))
+	output.WriteString("\n\n")
+	
+	for i, dbIndex := range itemsToShow {
+		db := m.databases[dbIndex]
+		var numberPrefix string
+		if totalCount < 10 {
+			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%d ", i+1))
+		} else {
+			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%02d ", i+1))
+		}
+		
+		if i == m.cursor {
+			output.WriteString(numberPrefix)
+			output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("▶ " + db.Name))
+			output.WriteString(" ")
+			output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("(" + db.Engine + ")"))
+		} else {
+			output.WriteString(numberPrefix)
+			output.WriteString("  " + db.Name + " ")
+			output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("(" + db.Engine + ")"))
+		}
+		output.WriteString("\n")
+	}
+}
+
+func (m model) renderTables(output *strings.Builder, blue, gray, white lipgloss.Color) {
+	if len(m.tables) == 0 {
+		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No tables found"))
+		return
+	}
+	
+	// Show filtered or all tables
+	var itemsToShow []int
+	var totalCount int
+	
+	if m.searchMode && m.searchQuery != "" && len(m.filteredIndices) > 0 {
+		itemsToShow = m.filteredIndices
+		totalCount = len(m.filteredIndices)
+	} else if m.searchMode && m.searchQuery != "" {
+		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No matches found"))
+		return
+	} else {
+		for i := range m.tables {
+			itemsToShow = append(itemsToShow, i)
+		}
+		totalCount = len(m.tables)
+	}
+	
+	output.WriteString(lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("Found %d table(s)", totalCount)))
+	output.WriteString("\n\n")
+	
+	for i, tableIndex := range itemsToShow {
+		table := m.tables[tableIndex]
+		name := table.DisplayName
+		if name == "" {
+			name = table.Name
+		}
+		
+		var numberPrefix string
+		if totalCount < 10 {
+			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%d ", i+1))
+		} else {
+			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%02d ", i+1))
+		}
+		
+		if i == m.cursor {
+			output.WriteString(numberPrefix)
+			output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("▶ " + name))
+		} else {
+			output.WriteString(numberPrefix)
+			output.WriteString("  " + name)
+		}
+		
+		if table.Schema != "" {
+			output.WriteString(" ")
+			output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("(" + table.Schema + ")"))
+		}
+		output.WriteString("\n")
+	}
+	
+}
+
+func (m model) renderFields(output *strings.Builder, blue, gray, white lipgloss.Color) {
+	if len(m.fields) == 0 {
+		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No fields found"))
+		return
+	}
+	
+	// Show filtered or all fields
+	var itemsToShow []int
+	var totalCount int
+	
+	if m.searchMode && m.searchQuery != "" && len(m.filteredIndices) > 0 {
+		itemsToShow = m.filteredIndices
+		totalCount = len(m.filteredIndices)
+	} else if m.searchMode && m.searchQuery != "" {
+		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No matches found"))
+		return
+	} else {
+		for i := range m.fields {
+			itemsToShow = append(itemsToShow, i)
+		}
+		totalCount = len(m.fields)
+	}
+	
+	output.WriteString(lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("Found %d field(s)", totalCount)))
+	output.WriteString("\n\n")
+	
+	for i, fieldIndex := range itemsToShow {
+		field := m.fields[fieldIndex]
+		name := field.DisplayName
+		if name == "" {
+			name = field.Name
+		}
+		
+		numberPrefix := lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%02d ", i+1))
+		
+		if i == m.cursor {
+			output.WriteString(numberPrefix)
+			output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("▶ " + name))
+		} else {
+			output.WriteString(numberPrefix)
+			output.WriteString("  " + name)
+		}
+		
+		// Add type info
+		if field.DatabaseType != "" {
+			output.WriteString(" ")
+			output.WriteString(lipgloss.NewStyle().Foreground(gray).Render(field.DatabaseType))
+		}
+		
+		if field.SemanticType != "" {
+			output.WriteString(" ")
+			output.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render("[" + field.SemanticType + "]"))
+		}
+		
+		output.WriteString("\n")
+	}
+	
+}
+
+
+func main() {
+	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		log.Fatal(err)
+		os.Exit(1)
+	}
+}
