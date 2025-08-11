@@ -4,11 +4,16 @@ A Terminal User Interface (TUI) for exploring Metabase database metadata. Browse
 
 ## Installation
 
-### Prerequisites
-- Go 1.23.0 or later
-- Access to a Metabase instance with API token
+### Quick Install (Recommended)
+```bash
+curl -sSL https://raw.githubusercontent.com/amureki/metabase-explorer/main/install.sh | bash
+```
+
+### Download Pre-built Binaries
+Download the latest release for your platform from [GitHub Releases](https://github.com/amureki/metabase-explorer/releases/latest).
 
 ### Build from Source
+If you have Go 1.23.0+ installed:
 ```bash
 git clone https://github.com/amureki/metabase-explorer.git
 cd metabase-explorer
