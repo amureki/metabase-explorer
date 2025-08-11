@@ -1,3 +1,5 @@
+version: 2
+
 project_name: mbx
 
 builds:
@@ -15,10 +17,9 @@ builds:
       - -s -w
 
 archives:
-  - format: tar.gz
-    format_overrides:
+  - format_overrides:
       - goos: windows
-        format: zip
+        formats: ["zip"]
     files:
       - LICENSE
       - README.md
