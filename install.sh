@@ -70,8 +70,12 @@ fi
 
 # Copy example config
 if [ -f ".env.example" ]; then
-    echo "Copying .env.example to current directory..."
-    cp ".env.example" "$PWD/.env.example"
+    if [ ! -f "$PWD/.env.example" ]; then
+        echo "Copying .env.example to current directory..."
+        cp ".env.example" "$PWD/.env.example"
+    else
+        echo ".env.example already exists in current directory"
+    fi
 fi
 
 # Cleanup
