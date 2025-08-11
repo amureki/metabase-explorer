@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -19,6 +20,8 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/sahilm/fuzzy"
 )
+
+const version = "0.1.1"
 
 type Database struct {
 	ID     int    `json:"id"`
@@ -363,7 +366,7 @@ func extractSchemas(tables []Table) []Schema {
 		}
 		schemaMap[schema]++
 	}
-	
+
 	var schemas []Schema
 	for name, count := range schemaMap {
 		schemas = append(schemas, Schema{
@@ -371,7 +374,7 @@ func extractSchemas(tables []Table) []Schema {
 			TableCount: count,
 		})
 	}
-	
+
 	// Sort schemas by name for consistent display
 	for i := 0; i < len(schemas)-1; i++ {
 		for j := i + 1; j < len(schemas); j++ {
@@ -380,7 +383,7 @@ func extractSchemas(tables []Table) []Schema {
 			}
 		}
 	}
-	
+
 	return schemas
 }
 
@@ -390,7 +393,7 @@ func loadTablesForSchema(client *MetabaseClient, databaseID int, schemaName stri
 		if err != nil {
 			return tablesLoaded{err: err}
 		}
-		
+
 		var filteredTables []Table
 		for _, table := range allTables {
 			tableSchema := table.Schema
@@ -401,7 +404,7 @@ func loadTablesForSchema(client *MetabaseClient, databaseID int, schemaName stri
 				filteredTables = append(filteredTables, table)
 			}
 		}
-		
+
 		return tablesLoaded{tables: filteredTables, err: nil}
 	}
 }
@@ -422,14 +425,38 @@ func tickSpinner() tea.Cmd {
 func initialModel() model {
 	err := godotenv.Load()
 	if err != nil {
-		log.Fatal("Error loading .env file")
+		fmt.Fprintf(os.Stderr, `Error: .env file not found
+
+To get started:
+1. Create a .env file in the current directory:
+   cp .env.example .env  # if available, or create manually
+
+2. Add your Metabase configuration:
+   METABASE_URL="https://your-metabase-instance.com/"
+   METABASE_API_TOKEN="your-api-token-here"
+
+3. Get your API token from Metabase Admin Settings → API Keys
+
+Run 'mbx --help' for more information.
+`)
+		os.Exit(1)
 	}
 
 	metabaseURL := os.Getenv("METABASE_URL")
 	apiToken := os.Getenv("METABASE_API_TOKEN")
 
 	if metabaseURL == "" || apiToken == "" {
-		log.Fatal("METABASE_URL and METABASE_API_TOKEN must be set in .env file")
+		fmt.Fprintf(os.Stderr, `Error: Missing required configuration
+
+Please set the following in your .env file:
+- METABASE_URL="https://your-metabase-instance.com/"
+- METABASE_API_TOKEN="your-api-token-here"
+
+Get your API token from Metabase Admin Settings → API Keys
+
+Run 'mbx --help' for more information.
+`)
+		os.Exit(1)
 	}
 
 	client := NewMetabaseClient(metabaseURL, apiToken)
@@ -1065,7 +1092,6 @@ func (m model) renderDatabases(output *strings.Builder, blue, gray, white lipglo
 		}
 	}
 
-
 	for i, dbIndex := range itemsToShow {
 		db := m.databases[dbIndex]
 		var numberPrefix string
@@ -1152,7 +1178,6 @@ func (m model) renderTables(output *strings.Builder, blue, gray, white lipgloss.
 		}
 	}
 
-
 	for i, tableIndex := range itemsToShow {
 		table := m.tables[tableIndex]
 		name := table.DisplayName
@@ -1200,7 +1225,6 @@ func (m model) renderFields(output *strings.Builder, blue, gray, white lipgloss.
 		}
 	}
 
-
 	for i, fieldIndex := range itemsToShow {
 		field := m.fields[fieldIndex]
 		name := field.DisplayName
@@ -1244,7 +1268,7 @@ func (m model) renderHelpOverlay(output *strings.Builder, blue, gray, white lipg
 	// Repository info
 	output.WriteString(lipgloss.NewStyle().Bold(true).Foreground(blue).Render("Links"))
 	output.WriteString("\n")
-	
+
 	// Repository link
 	if m.helpCursor == 0 {
 		output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("▶ Repository: "))
@@ -1254,8 +1278,8 @@ func (m model) renderHelpOverlay(output *strings.Builder, blue, gray, white lipg
 		output.WriteString(lipgloss.NewStyle().Foreground(blue).Render("https://github.com/amureki/metabase-explorer"))
 	}
 	output.WriteString("\n")
-	
-	// Issues link  
+
+	// Issues link
 	if m.helpCursor == 1 {
 		output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("▶ Issues:     "))
 		output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("https://github.com/amureki/metabase-explorer/issues"))
@@ -1264,7 +1288,7 @@ func (m model) renderHelpOverlay(output *strings.Builder, blue, gray, white lipg
 		output.WriteString(lipgloss.NewStyle().Foreground(blue).Render("https://github.com/amureki/metabase-explorer/issues"))
 	}
 	output.WriteString("\n")
-	
+
 	// Sponsor link
 	if m.helpCursor == 2 {
 		output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("▶ Sponsor:    "))
@@ -1292,11 +1316,52 @@ func (m model) renderHelpOverlay(output *strings.Builder, blue, gray, white lipg
 	output.WriteString("\n\n")
 
 	output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("Use ↑↓ to navigate, Enter to open link, ? or esc to close"))
-	
+
 	return output.String()
 }
 
+func printHelp() {
+	fmt.Printf(`mbx - Metabase Explorer %s
+
+A Terminal User Interface for exploring Metabase database metadata.
+
+USAGE:
+    mbx [OPTIONS]
+
+OPTIONS:
+    -h, --help     Show this help message
+    -v, --version  Show version information
+
+CONFIGURATION:
+    Create a .env file in your current directory with:
+
+    METABASE_URL="https://your-metabase-instance.com/"
+    METABASE_API_TOKEN="your-api-token-here"
+
+    Get your API token from Metabase Admin Settings → API Keys
+
+For more information, visit: https://github.com/amureki/metabase-explorer
+`, version)
+}
+
 func main() {
+	var showVersion = flag.Bool("version", false, "Show version information")
+	var showVersionShort = flag.Bool("v", false, "Show version information")
+	var showHelp = flag.Bool("help", false, "Show help information")
+	var showHelpShort = flag.Bool("h", false, "Show help information")
+
+	flag.Parse()
+
+	if *showVersion || *showVersionShort {
+		fmt.Printf("mbx version %s\n", version)
+		return
+	}
+
+	if *showHelp || *showHelpShort {
+		printHelp()
+		return
+	}
+
 	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		log.Fatal(err)
