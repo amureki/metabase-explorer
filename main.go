@@ -867,10 +867,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case versionChecked:
 		if msg.err == nil && msg.latestVersion != "" {
 			m.latestVersion = msg.latestVersion
-			// Compare versions (simple string comparison, assumes semantic versioning)
+			// Compare versions (handle v prefix)
 			currentVersion := version
-			if currentVersion != "dev" && msg.latestVersion != currentVersion {
-				m.updateAvailable = true
+			if currentVersion != "dev" {
+				// Normalize versions by removing v prefix
+				normalizedCurrent := strings.TrimPrefix(currentVersion, "v")
+				normalizedLatest := strings.TrimPrefix(msg.latestVersion, "v")
+				if normalizedLatest != normalizedCurrent {
+					m.updateAvailable = true
+				}
 			}
 		}
 
