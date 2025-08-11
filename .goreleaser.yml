@@ -15,6 +15,7 @@ builds:
     binary: mbx
     ldflags:
       - -s -w
+      - -X main.version={{.Version}}
 
 archives:
   - format_overrides:

@@ -21,7 +21,7 @@ import (
 	"github.com/sahilm/fuzzy"
 )
 
-const version = "0.1.2"
+var version = "dev" // Will be overridden by ldflags during release builds
 
 type Database struct {
 	ID     int    `json:"id"`
