@@ -48,6 +48,14 @@ mbx
 
 The application provides keyboard shortcuts and help information directly in the interface.
 
+## Updating
+
+To update to the latest version:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/amureki/metabase-explorer/main/install.sh | bash
+```
+
 ## Contributing
 
 1. Fork the repository

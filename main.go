@@ -308,6 +308,8 @@ type model struct {
 	numberInput      string
 	helpMode         bool
 	helpCursor       int
+	latestVersion    string
+	updateAvailable  bool
 }
 
 type databasesLoaded struct {
@@ -330,7 +332,41 @@ type fieldsLoaded struct {
 	err    error
 }
 
+type versionChecked struct {
+	latestVersion string
+	err           error
+}
+
 type spinnerTick struct{}
+
+func checkLatestVersion() tea.Cmd {
+	return func() tea.Msg {
+		resp, err := http.Get("https://api.github.com/repos/amureki/metabase-explorer/releases/latest")
+		if err != nil {
+			return versionChecked{err: err}
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			return versionChecked{err: fmt.Errorf("GitHub API returned status %d", resp.StatusCode)}
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return versionChecked{err: err}
+		}
+
+		var release struct {
+			TagName string `json:"tag_name"`
+		}
+		
+		if err := json.Unmarshal(body, &release); err != nil {
+			return versionChecked{err: err}
+		}
+
+		return versionChecked{latestVersion: release.TagName}
+	}
+}
 
 func loadDatabases(client *MetabaseClient) tea.Cmd {
 	return func() tea.Msg {
@@ -478,6 +514,7 @@ func (m model) Init() tea.Cmd {
 		},
 		loadDatabases(m.client),
 		tickSpinner(),
+		checkLatestVersion(),
 	)
 }
 
@@ -827,6 +864,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.fields = msg.fields
 		}
 
+	case versionChecked:
+		if msg.err == nil && msg.latestVersion != "" {
+			m.latestVersion = msg.latestVersion
+			// Compare versions (simple string comparison, assumes semantic versioning)
+			currentVersion := version
+			if currentVersion != "dev" && msg.latestVersion != currentVersion {
+				m.updateAvailable = true
+			}
+		}
+
 	case spinnerTick:
 		if m.loading {
 			m.spinnerIndex = (m.spinnerIndex + 1) % 10
@@ -857,7 +904,7 @@ func (m model) View() string {
 
 	switch m.currentView {
 	case viewDatabases:
-		title = "Metabase Explorer"
+		title = fmt.Sprintf("Metabase Explorer %s", version)
 		if len(m.databases) > 0 {
 			path = fmt.Sprintf("Databases (%d)", len(m.databases))
 		} else {
@@ -1067,6 +1114,16 @@ func (m model) getHelpText() string {
 		help.WriteString(navigation.String())
 		help.WriteString("\n")
 		help.WriteString(actions.String())
+
+		// Add update notification if available
+		if m.updateAvailable {
+			help.WriteString("\n")
+			updateStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11")) // Yellow
+			help.WriteString(updateStyle.Render("⚠ Update available: "))
+			help.WriteString(updateStyle.Render(m.latestVersion))
+			help.WriteString(descStyle.Render(" - Run: "))
+			help.WriteString(keyStyle.Render("curl -sSL https://raw.githubusercontent.com/amureki/metabase-explorer/main/install.sh | bash"))
+		}
 
 		return help.String()
 	}
