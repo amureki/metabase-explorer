@@ -43,7 +43,7 @@ METABASE_API_TOKEN="your-api-token-here"
 
 Run the application:
 ```bash
-./mbx
+mbx
 ```
 
 The application provides keyboard shortcuts and help information directly in the interface.
