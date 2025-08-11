@@ -21,7 +21,7 @@ import (
 	"github.com/sahilm/fuzzy"
 )
 
-const version = "0.1.1"
+const version = "0.1.2"
 
 type Database struct {
 	ID     int    `json:"id"`
