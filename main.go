@@ -916,21 +916,21 @@ func (m model) View() string {
 			path = "Databases"
 		}
 	case viewSchemas:
-		title = "Database Schemas"
+		title = fmt.Sprintf("Metabase Explorer %s | Database schemas", version)
 		if len(m.schemas) > 0 {
 			path = fmt.Sprintf("Databases > %s (%d)", m.selectedDatabase.Name, len(m.schemas))
 		} else {
 			path = fmt.Sprintf("Databases > %s", m.selectedDatabase.Name)
 		}
 	case viewTables:
-		title = "Schema Tables"
+		title = fmt.Sprintf("Metabase Explorer %s | Schema tables", version)
 		if len(m.tables) > 0 {
 			path = fmt.Sprintf("Databases > %s > %s (%d)", m.selectedDatabase.Name, m.selectedSchema.Name, len(m.tables))
 		} else {
 			path = fmt.Sprintf("Databases > %s > %s", m.selectedDatabase.Name, m.selectedSchema.Name)
 		}
 	case viewFields:
-		title = "Table Schema"
+		title = fmt.Sprintf("Metabase Explorer %s | Table fields", version)
 		tableName := m.selectedTable.DisplayName
 		if tableName == "" {
 			tableName = m.selectedTable.Name
@@ -1322,7 +1322,7 @@ func (m model) renderFields(output *strings.Builder, blue, gray, white lipgloss.
 
 func (m model) renderHelpOverlay(output *strings.Builder, blue, gray, white lipgloss.Color) string {
 	// Title and copyright
-	output.WriteString(lipgloss.NewStyle().Bold(true).Foreground(blue).Render("Metabase Explorer"))
+	output.WriteString(lipgloss.NewStyle().Bold(true).Foreground(blue).Render(fmt.Sprintf("Metabase Explorer %s | About", version)))
 	output.WriteString("\n")
 	output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("Copyright 2025 Rust Saiargaliev"))
 	output.WriteString("\n\n")
