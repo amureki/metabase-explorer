@@ -2,6 +2,10 @@
 
 A Terminal User Interface (TUI) for exploring Metabase database metadata. Browse databases, schemas, tables, and fields through an interactive interface that connects to Metabase via REST API.
 
+<img width="600" alt="Database and Table Browser" src="https://github.com/user-attachments/assets/a34f6b18-3f78-43b0-8fe7-b18a258faa2b" />
+
+<img width="600" alt="Field Details View" src="https://github.com/user-attachments/assets/8e0b2360-faea-4092-9374-e979280fc05e" />
+
 ## Installation
 
 ### Quick Install (Recommended)
