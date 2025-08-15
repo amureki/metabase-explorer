@@ -24,31 +24,58 @@ go build -o mbx .
 
 ## Configuration
 
-1. Copy the example environment file:
+### Interactive Setup (Recommended)
 ```bash
-cp .env.example .env
+mbx init
 ```
 
-2. Edit `.env` with your Metabase details:
+This will guide you through setting up your Metabase connection with an interactive wizard.
+
+### Manual Configuration
 ```bash
-METABASE_URL="https://your-metabase-instance.url/"
-METABASE_API_TOKEN="your-api-token-here"
+# Set up your default profile
+mbx config set url "https://your-metabase-instance.com/"
+mbx config set token "your-api-token-here"
+
+# Or create named profiles for different environments
+mbx config set --profile work url "https://work.metabase.com/"
+mbx config set --profile work token "work-token"
+mbx config switch work
+```
+
+### Multiple Profiles
+```bash
+mbx config list                    # Show all profiles
+mbx config get work                 # Show specific profile
+mbx config switch staging          # Change default profile
+mbx --profile work                  # Use specific profile once
 ```
 
 ### Getting an API Token
-1. Go to your Metabase Admin Settings
-2. Navigate to "API Keys"
-3. Create a new API key
-4. Copy the token to your `.env` file
+See the [Metabase API Keys documentation](https://www.metabase.com/docs/latest/people-and-groups/api-keys) for instructions on creating an API token.
 
 ## Usage
 
-Run the application:
 ```bash
+# Use default profile
 mbx
+
+# Use specific profile
+mbx --profile work
+
+# Override with flags
+mbx --url https://demo.metabase.com --token your-token
 ```
 
 The application provides keyboard shortcuts and help information directly in the interface.
+
+## Configuration Files
+
+Configuration is stored in `~/.config/mbx/config.yaml` by default, or you can specify a custom location:
+
+```bash
+mbx --config /path/to/custom/config.yaml config list
+```
 
 ## Updating
 

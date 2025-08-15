@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -17,11 +18,12 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/joho/godotenv"
 	"github.com/sahilm/fuzzy"
+	"gopkg.in/yaml.v3"
 )
 
-var version = "dev" // Will be overridden by ldflags during release builds
+var version = "dev"         // Will be overridden by ldflags during release builds
+var globalConfigFile string // Custom config file path from CLI flag
 
 type Database struct {
 	ID     int    `json:"id"`
@@ -57,6 +59,16 @@ type Field struct {
 	Active         bool   `json:"active"`
 	PreviewDisplay bool   `json:"preview_display"`
 	Visibility     string `json:"visibility_type"`
+}
+
+type Profile struct {
+	URL   string `yaml:"url"`
+	Token string `yaml:"token"`
+}
+
+type Config struct {
+	DefaultProfile string             `yaml:"default_profile"`
+	Profiles       map[string]Profile `yaml:"profiles"`
 }
 
 type MetabaseClient struct {
@@ -202,6 +214,83 @@ func (c *MetabaseClient) getTableFields(tableID int) ([]Field, error) {
 	}
 
 	return queryMeta.Fields, nil
+}
+
+func getConfigDir() (string, error) {
+	configDir := os.Getenv("XDG_CONFIG_HOME")
+	if configDir == "" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		configDir = filepath.Join(homeDir, ".config")
+	}
+	return filepath.Join(configDir, "mbx"), nil
+}
+
+func getConfigPath() (string, error) {
+	// 1. CLI flag has highest priority
+	if globalConfigFile != "" {
+		return globalConfigFile, nil
+	}
+
+	// 2. Default location (XDG compliant)
+	configDir, err := getConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(configDir, "config.yaml"), nil
+}
+
+func loadConfig() (*Config, error) {
+	configPath, err := getConfigPath()
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		return &Config{
+			DefaultProfile: "",
+			Profiles:       make(map[string]Profile),
+		}, nil
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var config Config
+	err = yaml.Unmarshal(data, &config)
+	if err != nil {
+		return nil, err
+	}
+
+	if config.Profiles == nil {
+		config.Profiles = make(map[string]Profile)
+	}
+
+	return &config, nil
+}
+
+func saveConfig(config *Config) error {
+	configPath, err := getConfigPath()
+	if err != nil {
+		return err
+	}
+
+	// Create directory for config file if it doesn't exist
+	configDir := filepath.Dir(configPath)
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return err
+	}
+
+	data, err := yaml.Marshal(config)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(configPath, data, 0644)
 }
 
 func openInBrowser(url string) error {
@@ -359,7 +448,7 @@ func checkLatestVersion() tea.Cmd {
 		var release struct {
 			TagName string `json:"tag_name"`
 		}
-		
+
 		if err := json.Unmarshal(body, &release); err != nil {
 			return versionChecked{err: err}
 		}
@@ -458,40 +547,65 @@ func tickSpinner() tea.Cmd {
 	})
 }
 
-func initialModel() model {
-	err := godotenv.Load()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, `Error: .env file not found
+func resolveConfiguration(flagURL, flagToken, flagProfile string) (string, string, error) {
+	var metabaseURL, apiToken string
 
-To get started:
-1. Create a .env file in the current directory:
-   cp .env.example .env  # if available, or create manually
-
-2. Add your Metabase configuration:
-   METABASE_URL="https://your-metabase-instance.com/"
-   METABASE_API_TOKEN="your-api-token-here"
-
-3. Get your API token from Metabase Admin Settings → API Keys
-
-Run 'mbx --help' for more information.
-`)
-		os.Exit(1)
+	// 1. Start with CLI flags (highest priority)
+	if flagURL != "" {
+		metabaseURL = flagURL
+	}
+	if flagToken != "" {
+		apiToken = flagToken
 	}
 
-	metabaseURL := os.Getenv("METABASE_URL")
-	apiToken := os.Getenv("METABASE_API_TOKEN")
-
+	// 2. Try config file
 	if metabaseURL == "" || apiToken == "" {
-		fmt.Fprintf(os.Stderr, `Error: Missing required configuration
+		config, err := loadConfig()
+		if err != nil {
+			return "", "", fmt.Errorf("failed to load config: %v", err)
+		}
 
-Please set the following in your .env file:
-- METABASE_URL="https://your-metabase-instance.com/"
-- METABASE_API_TOKEN="your-api-token-here"
+		profileName := flagProfile
+		if profileName == "" {
+			profileName = config.DefaultProfile
+		}
 
-Get your API token from Metabase Admin Settings → API Keys
+		if profileName != "" {
+			if profile, exists := config.Profiles[profileName]; exists {
+				if metabaseURL == "" && profile.URL != "" {
+					metabaseURL = profile.URL
+				}
+				if apiToken == "" && profile.Token != "" {
+					apiToken = profile.Token
+				}
+			}
+		}
+	}
 
+	// 3. Check if we have everything we need
+	if metabaseURL == "" || apiToken == "" {
+		return "", "", fmt.Errorf("missing configuration: URL=%s, Token=%s",
+			map[bool]string{true: "✓", false: "✗"}[metabaseURL != ""],
+			map[bool]string{true: "✓", false: "✗"}[apiToken != ""])
+	}
+
+	return metabaseURL, apiToken, nil
+}
+
+func initialModel(flagURL, flagToken, flagProfile string) model {
+	metabaseURL, apiToken, err := resolveConfiguration(flagURL, flagToken, flagProfile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, `Error: %v
+
+Configuration sources (in priority order):
+1. CLI flags: --url and --token
+2. Config file: ~/.config/mbx/config.yaml (or --config <path>)
+
+To get started, run: mbx init
+
+See https://www.metabase.com/docs/latest/people-and-groups/api-keys for API token setup.
 Run 'mbx --help' for more information.
-`)
+`, err)
 		os.Exit(1)
 	}
 
@@ -1389,21 +1503,345 @@ A Terminal User Interface for exploring Metabase database metadata.
 
 USAGE:
     mbx [OPTIONS]
+    mbx init
+    mbx config <command> [arguments]
 
 OPTIONS:
-    -h, --help     Show this help message
-    -v, --version  Show version information
+    -h, --help                Show this help message
+    -v, --version             Show version information
+        --url <url>           Metabase URL (overrides config)
+        --token <token>       API token (overrides config)
+        --profile <name>      Configuration profile to use
+        --config <path>       Custom config file location
 
 CONFIGURATION:
-    Create a .env file in your current directory with:
+    Run 'mbx init' for interactive setup, or use individual commands:
+    
+    mbx init                           # Interactive setup wizard
+    mbx config set url "https://your-metabase-instance.com/"
+    mbx config set token "your-api-token-here"
+    mbx config list                    # Show all profiles
+    mbx config switch <profile>        # Change default profile
 
-    METABASE_URL="https://your-metabase-instance.com/"
-    METABASE_API_TOKEN="your-api-token-here"
-
-    Get your API token from Metabase Admin Settings → API Keys
+    Default config location: ~/.config/mbx/config.yaml
+    Custom location: --config <path>
+    See https://www.metabase.com/docs/latest/people-and-groups/api-keys for API token setup
 
 For more information, visit: https://github.com/amureki/metabase-explorer
 `, version)
+}
+
+func handleConfigCommand(args []string) {
+	if len(args) == 0 {
+		fmt.Print(`mbx config - Configuration management
+
+USAGE:
+    mbx config <command> [arguments]
+
+COMMANDS:
+    list                    Show all profiles
+    get [profile]           Show profile details (default profile if none specified)  
+    set <key> <value>       Set configuration value in default profile
+    set --profile <name> <key> <value>  Set configuration value in specific profile
+    delete <profile>        Delete a profile
+    switch <profile>        Set default profile
+
+EXAMPLES:
+    mbx config list
+    mbx config set url "https://metabase.company.com/"
+    mbx config set --profile work token "abc123"
+    mbx config get work
+    mbx config switch work
+`)
+		return
+	}
+
+	cmd := args[0]
+	switch cmd {
+	case "list":
+		handleConfigList()
+	case "get":
+		profile := ""
+		if len(args) > 1 {
+			profile = args[1]
+		}
+		handleConfigShow(profile)
+	case "set":
+		if len(args) < 3 {
+			fmt.Fprintf(os.Stderr, "Error: 'set' requires key and value\nUsage: mbx config set <key> <value>\n")
+			os.Exit(1)
+		}
+		profileName := ""
+		key, value := args[1], args[2]
+
+		// Check for --profile flag
+		if len(args) >= 5 && args[1] == "--profile" {
+			profileName = args[2]
+			key, value = args[3], args[4]
+		}
+		handleConfigSet(profileName, key, value)
+	case "delete":
+		if len(args) < 2 {
+			fmt.Fprintf(os.Stderr, "Error: 'delete' requires profile name\nUsage: mbx config delete <profile>\n")
+			os.Exit(1)
+		}
+		handleConfigDelete(args[1])
+	case "switch":
+		if len(args) < 2 {
+			fmt.Fprintf(os.Stderr, "Error: 'switch' requires profile name\nUsage: mbx config switch <profile>\n")
+			os.Exit(1)
+		}
+		handleConfigSwitch(args[1])
+	default:
+		fmt.Fprintf(os.Stderr, "Error: Unknown config command '%s'\n", cmd)
+		os.Exit(1)
+	}
+}
+
+func handleConfigInit() {
+	config, err := loadConfig()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("Metabase Explorer Configuration Setup")
+	fmt.Println("====================================")
+
+	// Show existing configuration if any
+	if len(config.Profiles) > 0 {
+		fmt.Println("\nExisting configuration:")
+		for name := range config.Profiles {
+			marker := "  "
+			if name == config.DefaultProfile {
+				marker = "* "
+			}
+			fmt.Printf("%s%s\n", marker, name)
+		}
+		fmt.Println()
+	}
+
+	var url, token, profileName string
+
+	fmt.Print("Profile name [default]: ")
+	fmt.Scanln(&profileName)
+	if profileName == "" {
+		profileName = "default"
+	}
+
+	// Check if profile already exists
+	if existingProfile, exists := config.Profiles[profileName]; exists {
+		fmt.Printf("\nProfile '%s' already exists:\n", profileName)
+		fmt.Printf("  URL: %s\n", existingProfile.URL)
+		if len(existingProfile.Token) > 8 {
+			fmt.Printf("  Token: %s...%s\n", existingProfile.Token[:4], existingProfile.Token[len(existingProfile.Token)-4:])
+		} else {
+			fmt.Printf("  Token: %s\n", existingProfile.Token)
+		}
+
+		var overwrite string
+		fmt.Print("\nOverwrite existing profile? [y/N]: ")
+		fmt.Scanln(&overwrite)
+		if strings.ToLower(overwrite) != "y" && strings.ToLower(overwrite) != "yes" {
+			fmt.Println("Configuration unchanged.")
+			return
+		}
+
+		// Pre-fill with existing values
+		fmt.Printf("\nMetabase URL [%s]: ", existingProfile.URL)
+		fmt.Scanln(&url)
+		if url == "" {
+			url = existingProfile.URL
+		}
+
+		fmt.Printf("API Token [keep existing]: ")
+		fmt.Scanln(&token)
+		if token == "" {
+			token = existingProfile.Token
+		}
+	} else {
+		fmt.Print("\nMetabase URL: ")
+		fmt.Scanln(&url)
+
+		fmt.Print("API Token: ")
+		fmt.Scanln(&token)
+	}
+
+	if url == "" || token == "" {
+		fmt.Fprintf(os.Stderr, "Error: URL and token are required\n")
+		os.Exit(1)
+	}
+
+	config.Profiles[profileName] = Profile{URL: url, Token: token}
+	if config.DefaultProfile == "" {
+		config.DefaultProfile = profileName
+	}
+
+	err = saveConfig(config)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error saving config: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("\n✓ Configuration saved for profile '%s'\n", profileName)
+	if config.DefaultProfile == profileName {
+		fmt.Println("✓ Set as default profile")
+	}
+}
+
+func handleConfigList() {
+	config, err := loadConfig()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+		os.Exit(1)
+	}
+
+	if len(config.Profiles) == 0 {
+		fmt.Println("No profiles configured. Run 'mbx init' to get started.")
+		return
+	}
+
+	fmt.Println("Configured profiles:")
+	for name := range config.Profiles {
+		marker := "  "
+		if name == config.DefaultProfile {
+			marker = "* "
+		}
+		fmt.Printf("%s%s\n", marker, name)
+	}
+}
+
+func handleConfigShow(profileName string) {
+	config, err := loadConfig()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+		os.Exit(1)
+	}
+
+	if profileName == "" {
+		profileName = config.DefaultProfile
+	}
+
+	if profileName == "" {
+		fmt.Println("No default profile set. Run 'mbx init' or specify a profile name.")
+		return
+	}
+
+	profile, exists := config.Profiles[profileName]
+	if !exists {
+		fmt.Fprintf(os.Stderr, "Profile '%s' not found\n", profileName)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Profile: %s\n", profileName)
+	if profileName == config.DefaultProfile {
+		fmt.Println("(default)")
+	}
+	fmt.Printf("URL: %s\n", profile.URL)
+	if len(profile.Token) > 8 {
+		fmt.Printf("Token: %s...%s\n", profile.Token[:4], profile.Token[len(profile.Token)-4:])
+	} else {
+		fmt.Printf("Token: %s\n", profile.Token)
+	}
+}
+
+func handleConfigSet(profileName, key, value string) {
+	config, err := loadConfig()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+		os.Exit(1)
+	}
+
+	if profileName == "" {
+		if config.DefaultProfile == "" {
+			profileName = "default"
+		} else {
+			profileName = config.DefaultProfile
+		}
+	}
+
+	profile := config.Profiles[profileName]
+	switch strings.ToLower(key) {
+	case "url":
+		profile.URL = value
+	case "token":
+		profile.Token = value
+	default:
+		fmt.Fprintf(os.Stderr, "Error: Unknown key '%s'. Valid keys: url, token\n", key)
+		os.Exit(1)
+	}
+
+	config.Profiles[profileName] = profile
+	if config.DefaultProfile == "" {
+		config.DefaultProfile = profileName
+	}
+
+	err = saveConfig(config)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error saving config: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("✓ Set %s for profile '%s'\n", key, profileName)
+}
+
+func handleConfigDelete(profileName string) {
+	config, err := loadConfig()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+		os.Exit(1)
+	}
+
+	if _, exists := config.Profiles[profileName]; !exists {
+		fmt.Fprintf(os.Stderr, "Profile '%s' not found\n", profileName)
+		os.Exit(1)
+	}
+
+	delete(config.Profiles, profileName)
+
+	if config.DefaultProfile == profileName {
+		config.DefaultProfile = ""
+		if len(config.Profiles) > 0 {
+			for name := range config.Profiles {
+				config.DefaultProfile = name
+				break
+			}
+		}
+	}
+
+	err = saveConfig(config)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error saving config: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("✓ Deleted profile '%s'\n", profileName)
+	if config.DefaultProfile != "" {
+		fmt.Printf("✓ Default profile is now '%s'\n", config.DefaultProfile)
+	}
+}
+
+func handleConfigSwitch(profileName string) {
+	config, err := loadConfig()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+		os.Exit(1)
+	}
+
+	if _, exists := config.Profiles[profileName]; !exists {
+		fmt.Fprintf(os.Stderr, "Profile '%s' not found\n", profileName)
+		os.Exit(1)
+	}
+
+	config.DefaultProfile = profileName
+
+	err = saveConfig(config)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error saving config: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("✓ Switched to profile '%s'\n", profileName)
 }
 
 func main() {
@@ -1411,8 +1849,29 @@ func main() {
 	var showVersionShort = flag.Bool("v", false, "Show version information")
 	var showHelp = flag.Bool("help", false, "Show help information")
 	var showHelpShort = flag.Bool("h", false, "Show help information")
+	var metabaseURL = flag.String("url", "", "Metabase URL (overrides config)")
+	var apiToken = flag.String("token", "", "Metabase API token (overrides config)")
+	var profile = flag.String("profile", "", "Configuration profile to use")
+	var configFile = flag.String("config", "", "Custom config file path")
 
 	flag.Parse()
+
+	// Set global config file if provided
+	if *configFile != "" {
+		globalConfigFile = *configFile
+	}
+
+	args := flag.Args()
+	if len(args) > 0 {
+		switch args[0] {
+		case "init":
+			handleConfigInit()
+			return
+		case "config":
+			handleConfigCommand(args[1:])
+			return
+		}
+	}
 
 	if *showVersion || *showVersionShort {
 		fmt.Printf("mbx version %s\n", version)
@@ -1424,7 +1883,7 @@ func main() {
 		return
 	}
 
-	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
+	p := tea.NewProgram(initialModel(*metabaseURL, *apiToken, *profile), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		log.Fatal(err)
 		os.Exit(1)
