@@ -68,14 +68,9 @@ else
     exit 1
 fi
 
-# Copy example config
-if [ -f ".env.example" ]; then
-    if [ ! -f "$PWD/.env.example" ]; then
-        echo "Copying .env.example to current directory..."
-        cp ".env.example" "$PWD/.env.example"
-    else
-        echo ".env.example already exists in current directory"
-    fi
+# Check if configuration already exists
+if [ -f "$HOME/.config/mbx/config.yaml" ]; then
+    echo "Existing configuration found at ~/.config/mbx/config.yaml"
 fi
 
 # Cleanup
@@ -89,5 +84,11 @@ echo "Make sure $INSTALL_DIR is in your PATH:"
 echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
 echo ""
 echo "Next steps:"
-echo "1. Copy .env.example to .env and configure your Metabase URL and API token"
-echo "2. Run: $BINARY_NAME"
+echo "1. Run: $BINARY_NAME init"
+echo "   This will guide you through setting up your Metabase connection"
+echo "2. Then run: $BINARY_NAME"
+echo ""
+echo "Configuration:"
+echo "• Config file: ~/.config/mbx/config.yaml"
+echo "• Multiple profiles: $BINARY_NAME config --help"
+echo "• API token setup: https://www.metabase.com/docs/latest/people-and-groups/api-keys"
