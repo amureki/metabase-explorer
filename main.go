@@ -1241,7 +1241,7 @@ func (m model) getHelpText() string {
 			help.WriteString(updateStyle.Render("⚠ Update available: "))
 			help.WriteString(updateStyle.Render(m.latestVersion))
 			help.WriteString(descStyle.Render(" - Run: "))
-			help.WriteString(keyStyle.Render("curl -sSL https://raw.githubusercontent.com/amureki/metabase-explorer/main/install.sh | bash"))
+			help.WriteString(keyStyle.Render("mbx update"))
 		}
 
 		return help.String()
@@ -1879,12 +1879,12 @@ func compareVersions(current, latest string) bool {
 	// Normalize versions by removing 'v' prefix
 	currentNorm := strings.TrimPrefix(current, "v")
 	latestNorm := strings.TrimPrefix(latest, "v")
-	
+
 	// Handle dev version
 	if currentNorm == "dev" {
 		return false // Always allow update from dev version
 	}
-	
+
 	// Simple string comparison for semantic versions
 	// This works for most cases like "1.2.3" vs "1.2.4"
 	return currentNorm == latestNorm
@@ -1892,7 +1892,7 @@ func compareVersions(current, latest string) bool {
 
 func handleUpdateCommand() {
 	fmt.Println("Checking for updates...")
-	
+
 	// Get the latest version from GitHub
 	latestVersion, err := getLatestVersion()
 	if err != nil {
@@ -1901,22 +1901,22 @@ func handleUpdateCommand() {
 		fmt.Fprintf(os.Stderr, "curl -sSL https://raw.githubusercontent.com/amureki/metabase-explorer/main/install.sh | bash\n")
 		os.Exit(1)
 	}
-	
+
 	// Compare with current version
 	currentVersion := version
 	if compareVersions(currentVersion, latestVersion) {
 		fmt.Printf("✓ Already up to date! Current version: %s\n", currentVersion)
 		return
 	}
-	
+
 	fmt.Printf("Update available: %s → %s\n", currentVersion, latestVersion)
 	fmt.Println("Updating mbx to the latest version...")
-	
+
 	// Download and execute the install script
 	cmd := exec.Command("bash", "-c", "curl -sSL https://raw.githubusercontent.com/amureki/metabase-explorer/main/install.sh | bash")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	
+
 	err = cmd.Run()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Update failed: %v\n", err)
@@ -1924,7 +1924,7 @@ func handleUpdateCommand() {
 		fmt.Fprintf(os.Stderr, "curl -sSL https://raw.githubusercontent.com/amureki/metabase-explorer/main/install.sh | bash\n")
 		os.Exit(1)
 	}
-	
+
 	fmt.Printf("✓ Update completed successfully! Updated to version %s\n", latestVersion)
 }
 
