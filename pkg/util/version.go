@@ -60,7 +60,7 @@ func HandleUpdateCommand(currentVersion string) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to check for updates: %v\n", err)
 		fmt.Fprintf(os.Stderr, "You can manually update by running:\n")
-		fmt.Fprintf(os.Stderr, "curl -sSL https://raw.githubusercontent.com/amureki/metabase-explorer/main/install.sh | bash\n")
+		fmt.Fprintf(os.Stderr, "mbx update\n")
 		os.Exit(1)
 	}
 
@@ -82,7 +82,7 @@ func HandleUpdateCommand(currentVersion string) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Update failed: %v\n", err)
 		fmt.Fprintf(os.Stderr, "\nYou can manually update by running:\n")
-		fmt.Fprintf(os.Stderr, "curl -sSL https://raw.githubusercontent.com/amureki/metabase-explorer/main/install.sh | bash\n")
+		fmt.Fprintf(os.Stderr, "mbx update\n")
 		os.Exit(1)
 	}
 
