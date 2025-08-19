@@ -18,10 +18,31 @@ func (m *Model) updateSearch() {
 	m.filteredIndices = nil
 
 	switch m.currentView {
+	case viewMainMenu:
+		// No search for main menu
+		return
 	case viewDatabases:
 		var names []string
 		for _, db := range m.databases {
 			names = append(names, db.Name)
+		}
+		matches := fuzzy.Find(m.searchQuery, names)
+		for _, match := range matches {
+			m.filteredIndices = append(m.filteredIndices, match.Index)
+		}
+	case viewCollections:
+		var names []string
+		for _, collection := range m.collections {
+			names = append(names, collection.Name)
+		}
+		matches := fuzzy.Find(m.searchQuery, names)
+		for _, match := range matches {
+			m.filteredIndices = append(m.filteredIndices, match.Index)
+		}
+	case viewCollectionItems:
+		var names []string
+		for _, item := range m.collectionItems {
+			names = append(names, item.Name)
 		}
 		matches := fuzzy.Find(m.searchQuery, names)
 		for _, match := range matches {
@@ -72,10 +93,33 @@ func (m Model) getWebURL() string {
 	baseURL := strings.TrimSuffix(m.client.BaseURL, "/")
 
 	switch m.currentView {
+	case viewMainMenu:
+		return baseURL
 	case viewDatabases:
 		if len(m.databases) > 0 && m.cursor < len(m.databases) {
 			db := m.databases[m.cursor]
 			return fmt.Sprintf("%s/browse/databases/%d", baseURL, db.ID)
+		}
+	case viewCollections:
+		if len(m.collections) > 0 && m.cursor < len(m.collections) {
+			collection := m.collections[m.cursor]
+			return fmt.Sprintf("%s/collection/%v", baseURL, collection.ID)
+		}
+	case viewCollectionItems:
+		if len(m.collectionItems) > 0 && m.cursor < len(m.collectionItems) {
+			item := m.collectionItems[m.cursor]
+			switch item.Model {
+			case "card":
+				return fmt.Sprintf("%s/question/%d", baseURL, item.ID)
+			case "dashboard":
+				return fmt.Sprintf("%s/dashboard/%d", baseURL, item.ID)
+			case "collection":
+				return fmt.Sprintf("%s/collection/%d", baseURL, item.ID)
+			default:
+				return fmt.Sprintf("%s/collection/%v", baseURL, m.selectedCollection.ID)
+			}
+		} else if m.selectedCollection != nil {
+			return fmt.Sprintf("%s/collection/%v", baseURL, m.selectedCollection.ID)
 		}
 	case viewSchemas:
 		if len(m.schemas) > 0 && m.cursor < len(m.schemas) && m.selectedDatabase != nil {
@@ -126,12 +170,37 @@ func (m Model) View() string {
 	path := ""
 
 	switch m.currentView {
-	case viewDatabases:
+	case viewMainMenu:
 		title = fmt.Sprintf("Metabase Explorer %s", m.Version)
+		path = "Main Menu"
+	case viewDatabases:
+		title = fmt.Sprintf("Metabase Explorer %s | Databases", m.Version)
 		if len(m.databases) > 0 {
 			path = fmt.Sprintf("Databases (%d)", len(m.databases))
 		} else {
 			path = "Databases"
+		}
+	case viewCollections:
+		title = fmt.Sprintf("Metabase Explorer %s | Collections", m.Version)
+		if len(m.collections) > 0 {
+			path = fmt.Sprintf("Collections (%d)", len(m.collections))
+		} else {
+			path = "Collections"
+		}
+	case viewCollectionItems:
+		title = fmt.Sprintf("Metabase Explorer %s | Collection items", m.Version)
+		// Build breadcrumb path showing collection hierarchy
+		var pathParts []string
+		pathParts = append(pathParts, "Collections")
+		for _, collection := range m.collectionStack {
+			pathParts = append(pathParts, collection.Name)
+		}
+		pathParts = append(pathParts, m.selectedCollection.Name)
+		
+		if len(m.collectionItems) > 0 {
+			path = fmt.Sprintf("%s (%d)", strings.Join(pathParts, " > "), len(m.collectionItems))
+		} else {
+			path = strings.Join(pathParts, " > ")
 		}
 	case viewSchemas:
 		title = fmt.Sprintf("Metabase Explorer %s | Database schemas", m.Version)
@@ -200,8 +269,14 @@ func (m Model) View() string {
 
 	// Render content based on view
 	switch m.currentView {
+	case viewMainMenu:
+		m.renderMainMenu(&output, blue, gray, white)
 	case viewDatabases:
 		m.renderDatabases(&output, blue, gray, white)
+	case viewCollections:
+		m.renderCollections(&output, blue, gray, white)
+	case viewCollectionItems:
+		m.renderCollectionItems(&output, blue, gray, white)
 	case viewSchemas:
 		m.renderSchemas(&output, blue, gray, white)
 	case viewTables:
@@ -232,19 +307,28 @@ func (m Model) getHelpText() string {
 
 		// Navigation section - combine all arrows
 		var navigation strings.Builder
-		if m.currentView != viewDatabases {
+		if m.currentView == viewMainMenu {
+			navigation.WriteString(keyStyle.Render("↑↓→"))
+			navigation.WriteString(descStyle.Render(" navigate  "))
+		} else if m.currentView == viewDatabases || m.currentView == viewCollections {
 			navigation.WriteString(keyStyle.Render("↑↓←→"))
 			navigation.WriteString(descStyle.Render(" navigate  "))
 		} else {
-			navigation.WriteString(keyStyle.Render("↑↓→"))
+			navigation.WriteString(keyStyle.Render("↑↓←→"))
 			navigation.WriteString(descStyle.Render(" navigate  "))
 		}
 
 		// Quick select (context-aware)
 		var itemCount int
 		switch m.currentView {
+		case viewMainMenu:
+			itemCount = 2 // Collections and Databases
 		case viewDatabases:
 			itemCount = len(m.databases)
+		case viewCollections:
+			itemCount = len(m.collections)
+		case viewCollectionItems:
+			itemCount = len(m.collectionItems)
 		case viewSchemas:
 			itemCount = len(m.schemas)
 		case viewTables:
@@ -538,4 +622,142 @@ func (m Model) renderHelpOverlay(output *strings.Builder, blue, gray, white lipg
 	output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("Use ↑↓ to navigate, Enter to open link, ? or esc to close"))
 
 	return output.String()
+}
+
+func (m Model) renderMainMenu(output *strings.Builder, blue, gray, white lipgloss.Color) {
+	options := []string{"Collections", "Databases"}
+
+	for i, option := range options {
+		var numberPrefix string
+		numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%d ", i+1))
+
+		if i == m.cursor {
+			output.WriteString(numberPrefix)
+			output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("▶ " + option))
+		} else {
+			output.WriteString(numberPrefix)
+			output.WriteString("  " + option)
+		}
+		output.WriteString("\n")
+	}
+}
+
+func (m Model) renderCollections(output *strings.Builder, blue, gray, white lipgloss.Color) {
+	if len(m.collections) == 0 {
+		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No collections found"))
+		return
+	}
+
+	// Show filtered or all collections
+	var itemsToShow []int
+
+	if m.searchMode && m.searchQuery != "" && len(m.filteredIndices) > 0 {
+		itemsToShow = m.filteredIndices
+	} else if m.searchMode && m.searchQuery != "" {
+		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No matches found"))
+		return
+	} else {
+		for i := range m.collections {
+			itemsToShow = append(itemsToShow, i)
+		}
+	}
+
+	for i, collectionIndex := range itemsToShow {
+		collection := m.collections[collectionIndex]
+		var numberPrefix string
+		if len(m.collections) < 10 {
+			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%d ", i+1))
+		} else {
+			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%02d ", i+1))
+		}
+
+		if i == m.cursor {
+			output.WriteString(numberPrefix)
+			output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("▶ " + collection.Name))
+			if collection.Description != "" {
+				output.WriteString(" ")
+				output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("(" + collection.Description + ")"))
+			}
+		} else {
+			output.WriteString(numberPrefix)
+			output.WriteString("  " + collection.Name)
+			if collection.Description != "" {
+				output.WriteString(" ")
+				output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("(" + collection.Description + ")"))
+			}
+		}
+		output.WriteString("\n")
+	}
+}
+
+func (m Model) renderCollectionItems(output *strings.Builder, blue, gray, white lipgloss.Color) {
+	if len(m.collectionItems) == 0 {
+		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No items found in this collection"))
+		return
+	}
+
+	// Show filtered or all collection items
+	var itemsToShow []int
+
+	if m.searchMode && m.searchQuery != "" && len(m.filteredIndices) > 0 {
+		itemsToShow = m.filteredIndices
+	} else if m.searchMode && m.searchQuery != "" {
+		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No matches found"))
+		return
+	} else {
+		for i := range m.collectionItems {
+			itemsToShow = append(itemsToShow, i)
+		}
+	}
+
+	// Apply viewport limiting for large lists
+	viewportEnd := m.viewportStart + m.viewportHeight
+	if viewportEnd > len(itemsToShow) {
+		viewportEnd = len(itemsToShow)
+	}
+	
+	// Show scroll indicators if there are items outside viewport
+	if m.viewportStart > 0 {
+		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("   ↑ ... (showing items " + fmt.Sprintf("%d-%d of %d)", m.viewportStart+1, viewportEnd, len(itemsToShow)) + ")"))
+		output.WriteString("\n")
+	}
+
+	for i := m.viewportStart; i < viewportEnd; i++ {
+		itemIndex := itemsToShow[i]
+		item := m.collectionItems[itemIndex]
+		var numberPrefix string
+		if len(m.collectionItems) < 10 {
+			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%d ", i+1))
+		} else {
+			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%02d ", i+1))
+		}
+
+		if i == m.cursor {
+			output.WriteString(numberPrefix)
+			output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("▶ " + item.Name))
+		} else {
+			output.WriteString(numberPrefix)
+			output.WriteString("  " + item.Name)
+		}
+
+		// Add type info
+		if item.Model != "" {
+			output.WriteString(" ")
+			output.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render("[" + item.Model + "]"))
+		}
+
+		// Add description if available
+		if item.Description != "" {
+			output.WriteString(" ")
+			output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("(" + item.Description + ")"))
+		}
+
+		output.WriteString("\n")
+	}
+	
+	// Show bottom scroll indicator if there are more items below
+	if viewportEnd < len(itemsToShow) {
+		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("   ↓ ... (showing items " + fmt.Sprintf("%d-%d of %d)", m.viewportStart+1, viewportEnd, len(itemsToShow)) + ")"))
+		output.WriteString("\n")
+	}
 }

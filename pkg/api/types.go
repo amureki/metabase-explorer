@@ -35,3 +35,24 @@ type Field struct {
 	PreviewDisplay bool   `json:"preview_display"`
 	Visibility     string `json:"visibility_type"`
 }
+
+type Collection struct {
+	ID          interface{} `json:"id"` // Can be int or string ("root")
+	Name        string      `json:"name"`
+	Description string      `json:"description"`
+	Slug        string      `json:"slug"`
+	Color       string      `json:"color"`
+	Archived    bool        `json:"archived"`
+	Location    string      `json:"location"`
+	IsPersonal  bool        `json:"is_personal"`
+}
+
+type CollectionItem struct {
+	ID           int    `json:"id"`
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	Model        string `json:"model"` // "card", "dashboard", "collection", etc.
+	CollectionID int    `json:"collection_id"`
+	DatabaseID   *int   `json:"database_id"` // Nullable for non-database items
+	Archived     bool   `json:"archived"`
+}

@@ -15,35 +15,44 @@ import (
 type viewState int
 
 const (
-	viewDatabases viewState = iota
+	viewMainMenu viewState = iota
+	viewDatabases
 	viewSchemas
 	viewTables
 	viewFields
+	viewCollections
+	viewCollectionItems
 )
 
 type Model struct {
-	databases        []api.Database
-	schemas          []api.Schema
-	tables           []api.Table
-	fields           []api.Field
-	cursor           int
-	loading          bool
-	error            string
-	client           *api.MetabaseClient
-	currentView      viewState
-	selectedDatabase *api.Database
-	selectedSchema   *api.Schema
-	selectedTable    *api.Table
-	searchMode       bool
-	searchQuery      string
-	filteredIndices  []int
-	spinnerIndex     int
-	numberInput      string
-	helpMode         bool
-	helpCursor       int
-	latestVersion    string
-	updateAvailable  bool
-	Version          string
+	databases          []api.Database
+	schemas            []api.Schema
+	tables             []api.Table
+	fields             []api.Field
+	collections        []api.Collection
+	collectionItems    []api.CollectionItem
+	cursor             int
+	loading            bool
+	error              string
+	client             *api.MetabaseClient
+	currentView        viewState
+	selectedDatabase   *api.Database
+	selectedSchema     *api.Schema
+	selectedTable      *api.Table
+	selectedCollection *api.Collection
+	collectionStack    []*api.Collection // Track collection hierarchy for proper back navigation
+	viewportStart      int               // Starting index for viewport scrolling
+	viewportHeight     int               // Number of items that can be displayed at once
+	searchMode         bool
+	searchQuery        string
+	filteredIndices    []int
+	spinnerIndex       int
+	numberInput        string
+	helpMode           bool
+	helpCursor         int
+	latestVersion      string
+	updateAvailable    bool
+	Version            string
 }
 
 func InitialModel(flagURL, flagToken, flagProfile, version string) Model {
@@ -65,9 +74,9 @@ Run 'mbx --help' for more information.
 
 	client := api.NewMetabaseClient(metabaseURL, apiToken)
 	return Model{
-		loading:     true,
+		loading:     false,
 		client:      client,
-		currentView: viewDatabases,
+		currentView: viewMainMenu,
 		Version:     version,
 	}
 }
@@ -77,12 +86,10 @@ func (m Model) Init() tea.Cmd {
 		func() tea.Msg {
 			err := m.client.TestConnection()
 			if err != nil {
-				return databasesLoaded{err: err}
+				return connectionTested{err: err}
 			}
-			return nil
+			return connectionTested{err: nil}
 		},
-		loadDatabases(m.client),
-		tickSpinner(),
 		checkLatestVersion(),
 	)
 }
@@ -115,6 +122,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.loading = true
 						m.error = ""
 						return m, tea.Batch(loadSchemas(m.client, m.selectedDatabase.ID), tickSpinner())
+					} else if m.currentView == viewCollections && len(m.collections) > 0 {
+						m.selectedCollection = &m.collections[actualIndex]
+						m.collectionStack = nil // Clear stack when entering from root collections
+						m.currentView = viewCollectionItems
+						m.cursor = 0
+						m.loading = true
+						m.error = ""
+						return m, tea.Batch(loadCollectionItems(m.client, m.selectedCollection.ID), tickSpinner())
+					} else if m.currentView == viewCollectionItems && len(m.collectionItems) > 0 {
+						item := m.collectionItems[actualIndex]
+						if item.Model == "collection" {
+							// Push current collection to stack before drilling into sub-collection
+							m.collectionStack = append(m.collectionStack, m.selectedCollection)
+							m.selectedCollection = &api.Collection{
+								ID:   item.ID,
+								Name: item.Name,
+							}
+							m.currentView = viewCollectionItems
+							m.cursor = 0
+							m.loading = true
+							m.error = ""
+							return m, tea.Batch(loadCollectionItems(m.client, item.ID), tickSpinner())
+						}
 					} else if m.currentView == viewSchemas && len(m.schemas) > 0 {
 						m.selectedSchema = &m.schemas[actualIndex]
 						m.currentView = viewTables
@@ -165,7 +195,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "/":
-			if m.helpMode {
+			if m.helpMode || m.currentView == viewMainMenu {
 				return m, nil
 			}
 			m.searchMode = true
@@ -182,8 +212,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Get current item count for validation
 			var itemCount int
 			switch m.currentView {
+			case viewMainMenu:
+				itemCount = 2 // Collections and Databases
 			case viewDatabases:
 				itemCount = len(m.databases)
+			case viewCollections:
+				itemCount = len(m.collections)
+			case viewCollectionItems:
+				itemCount = len(m.collectionItems)
 			case viewSchemas:
 				itemCount = len(m.schemas)
 			case viewTables:
@@ -213,6 +249,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.numberInput = "" // Clear number input when using arrow keys
 			if m.cursor > 0 {
 				m.cursor--
+				// Update viewport for collections and other views that might have many items
+				if m.currentView == viewCollectionItems && len(m.collectionItems) > 0 {
+					m.updateViewport(len(m.collectionItems))
+				}
 			}
 		case "down", "j":
 			if m.helpMode {
@@ -223,8 +263,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.numberInput = "" // Clear number input when using arrow keys
-			if m.currentView == viewDatabases && m.cursor < len(m.databases)-1 {
+			if m.currentView == viewMainMenu && m.cursor < 1 {
 				m.cursor++
+			} else if m.currentView == viewDatabases && m.cursor < len(m.databases)-1 {
+				m.cursor++
+			} else if m.currentView == viewCollections && m.cursor < len(m.collections)-1 {
+				m.cursor++
+			} else if m.currentView == viewCollectionItems && m.cursor < len(m.collectionItems)-1 {
+				m.cursor++
+				m.updateViewport(len(m.collectionItems))
 			} else if m.currentView == viewSchemas && m.cursor < len(m.schemas)-1 {
 				m.cursor++
 			} else if m.currentView == viewTables && m.cursor < len(m.tables)-1 {
@@ -241,6 +288,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.numberInput != "" {
 				// Clear number input
 				m.numberInput = ""
+			} else if m.currentView == viewDatabases || m.currentView == viewCollections {
+				m.currentView = viewMainMenu
+				m.cursor = 0
+				m.selectedDatabase = nil
+				m.databases = nil
+				m.collections = nil
+			} else if m.currentView == viewCollectionItems {
+				if len(m.collectionStack) > 0 {
+					// Pop from stack to go to parent collection
+					m.selectedCollection = m.collectionStack[len(m.collectionStack)-1]
+					m.collectionStack = m.collectionStack[:len(m.collectionStack)-1]
+					m.cursor = 0
+					m.loading = true
+					m.error = ""
+					return m, tea.Batch(loadCollectionItems(m.client, m.selectedCollection.ID), tickSpinner())
+				} else {
+					// Go back to root collections
+					m.currentView = viewCollections
+					m.cursor = 0
+					m.selectedCollection = nil
+					m.collectionItems = nil
+				}
 			} else if m.currentView == viewSchemas {
 				m.currentView = viewDatabases
 				m.cursor = 0
@@ -277,13 +346,53 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Clear number input after navigation
 			m.numberInput = ""
 
-			if m.currentView == viewDatabases && len(m.databases) > 0 {
+			if m.currentView == viewMainMenu {
+				if m.cursor == 0 {
+					// Navigate to Collections
+					m.currentView = viewCollections
+					m.cursor = 0
+					m.loading = true
+					m.error = ""
+					return m, tea.Batch(loadCollections(m.client), tickSpinner())
+				} else if m.cursor == 1 {
+					// Navigate to Databases
+					m.currentView = viewDatabases
+					m.cursor = 0
+					m.loading = true
+					m.error = ""
+					return m, tea.Batch(loadDatabases(m.client), tickSpinner())
+				}
+			} else if m.currentView == viewDatabases && len(m.databases) > 0 {
 				m.selectedDatabase = &m.databases[m.cursor]
 				m.currentView = viewSchemas
 				m.cursor = 0
 				m.loading = true
 				m.error = ""
 				return m, tea.Batch(loadSchemas(m.client, m.selectedDatabase.ID), tickSpinner())
+			} else if m.currentView == viewCollections && len(m.collections) > 0 {
+				m.selectedCollection = &m.collections[m.cursor]
+				m.collectionStack = nil // Clear stack when entering from root collections
+				m.currentView = viewCollectionItems
+				m.cursor = 0
+				m.loading = true
+				m.error = ""
+				return m, tea.Batch(loadCollectionItems(m.client, m.selectedCollection.ID), tickSpinner())
+			} else if m.currentView == viewCollectionItems && len(m.collectionItems) > 0 {
+				item := m.collectionItems[m.cursor]
+				if item.Model == "collection" {
+					// Push current collection to stack before drilling into sub-collection
+					m.collectionStack = append(m.collectionStack, m.selectedCollection)
+					m.selectedCollection = &api.Collection{
+						ID:   item.ID,
+						Name: item.Name,
+					}
+					m.currentView = viewCollectionItems
+					m.cursor = 0
+					m.loading = true
+					m.error = ""
+					return m, tea.Batch(loadCollectionItems(m.client, item.ID), tickSpinner())
+				}
+				// For non-collection items (cards, dashboards), do nothing or could open in web
 			} else if m.currentView == viewSchemas && len(m.schemas) > 0 {
 				m.selectedSchema = &m.schemas[m.cursor]
 				m.currentView = viewTables
@@ -320,13 +429,53 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Keep Enter as alternative to right arrow
 			m.numberInput = ""
 
-			if m.currentView == viewDatabases && len(m.databases) > 0 {
+			if m.currentView == viewMainMenu {
+				if m.cursor == 0 {
+					// Navigate to Collections
+					m.currentView = viewCollections
+					m.cursor = 0
+					m.loading = true
+					m.error = ""
+					return m, tea.Batch(loadCollections(m.client), tickSpinner())
+				} else if m.cursor == 1 {
+					// Navigate to Databases
+					m.currentView = viewDatabases
+					m.cursor = 0
+					m.loading = true
+					m.error = ""
+					return m, tea.Batch(loadDatabases(m.client), tickSpinner())
+				}
+			} else if m.currentView == viewDatabases && len(m.databases) > 0 {
 				m.selectedDatabase = &m.databases[m.cursor]
 				m.currentView = viewSchemas
 				m.cursor = 0
 				m.loading = true
 				m.error = ""
 				return m, tea.Batch(loadSchemas(m.client, m.selectedDatabase.ID), tickSpinner())
+			} else if m.currentView == viewCollections && len(m.collections) > 0 {
+				m.selectedCollection = &m.collections[m.cursor]
+				m.collectionStack = nil // Clear stack when entering from root collections
+				m.currentView = viewCollectionItems
+				m.cursor = 0
+				m.loading = true
+				m.error = ""
+				return m, tea.Batch(loadCollectionItems(m.client, m.selectedCollection.ID), tickSpinner())
+			} else if m.currentView == viewCollectionItems && len(m.collectionItems) > 0 {
+				item := m.collectionItems[m.cursor]
+				if item.Model == "collection" {
+					// Push current collection to stack before drilling into sub-collection
+					m.collectionStack = append(m.collectionStack, m.selectedCollection)
+					m.selectedCollection = &api.Collection{
+						ID:   item.ID,
+						Name: item.Name,
+					}
+					m.currentView = viewCollectionItems
+					m.cursor = 0
+					m.loading = true
+					m.error = ""
+					return m, tea.Batch(loadCollectionItems(m.client, item.ID), tickSpinner())
+				}
+				// For non-collection items (cards, dashboards), do nothing or could open in web
 			} else if m.currentView == viewSchemas && len(m.schemas) > 0 {
 				m.selectedSchema = &m.schemas[m.cursor]
 				m.currentView = viewTables
@@ -352,6 +501,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.numberInput != "" {
 				// Clear number input
 				m.numberInput = ""
+			} else if m.currentView == viewDatabases || m.currentView == viewCollections {
+				m.currentView = viewMainMenu
+				m.cursor = 0
+				m.selectedDatabase = nil
+				m.databases = nil
+				m.collections = nil
+			} else if m.currentView == viewCollectionItems {
+				if len(m.collectionStack) > 0 {
+					// Pop from stack to go to parent collection
+					m.selectedCollection = m.collectionStack[len(m.collectionStack)-1]
+					m.collectionStack = m.collectionStack[:len(m.collectionStack)-1]
+					m.cursor = 0
+					m.loading = true
+					m.error = ""
+					return m, tea.Batch(loadCollectionItems(m.client, m.selectedCollection.ID), tickSpinner())
+				} else {
+					// Go back to root collections
+					m.currentView = viewCollections
+					m.cursor = 0
+					m.selectedCollection = nil
+					m.collectionItems = nil
+				}
 			} else if m.currentView == viewSchemas {
 				m.currentView = viewDatabases
 				m.cursor = 0
@@ -375,6 +546,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if m.numberInput != "" {
 				// Clear number input
 				m.numberInput = ""
+			} else if m.currentView == viewDatabases || m.currentView == viewCollections {
+				m.currentView = viewMainMenu
+				m.cursor = 0
+				m.selectedDatabase = nil
+				m.databases = nil
+				m.collections = nil
+			} else if m.currentView == viewCollectionItems {
+				if len(m.collectionStack) > 0 {
+					// Pop from stack to go to parent collection
+					m.selectedCollection = m.collectionStack[len(m.collectionStack)-1]
+					m.collectionStack = m.collectionStack[:len(m.collectionStack)-1]
+					m.cursor = 0
+					m.loading = true
+					m.error = ""
+					return m, tea.Batch(loadCollectionItems(m.client, m.selectedCollection.ID), tickSpinner())
+				} else {
+					// Go back to root collections
+					m.currentView = viewCollections
+					m.cursor = 0
+					m.selectedCollection = nil
+					m.collectionItems = nil
+				}
 			} else if m.currentView == viewSchemas {
 				m.currentView = viewDatabases
 				m.cursor = 0
@@ -393,12 +586,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+	case connectionTested:
+		if msg.err != nil {
+			m.error = msg.err.Error()
+		}
+
 	case databasesLoaded:
 		m.loading = false
 		if msg.err != nil {
 			m.error = msg.err.Error()
 		} else {
 			m.databases = msg.databases
+		}
+
+	case collectionsLoaded:
+		m.loading = false
+		if msg.err != nil {
+			m.error = msg.err.Error()
+		} else {
+			m.collections = msg.collections
+		}
+
+	case collectionItemsLoaded:
+		m.loading = false
+		if msg.err != nil {
+			m.error = msg.err.Error()
+		} else {
+			m.collectionItems = msg.items
+			m.viewportStart = 0 // Reset viewport when loading new items
+			if len(m.collectionItems) > 0 {
+				m.updateViewport(len(m.collectionItems))
+			}
 		}
 
 	case schemasLoaded:
@@ -456,4 +674,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// updateViewport adjusts the viewport to keep the cursor visible
+func (m *Model) updateViewport(itemCount int) {
+	// Reserve space for header (title + path + search), help text, and some padding
+	// Rough estimate: 6 lines for UI elements
+	terminalHeight := 25 // Conservative estimate - in real implementation could use tea.WindowSizeMsg
+	m.viewportHeight = terminalHeight - 8 // Reserve 8 lines for UI elements
+	
+	if m.viewportHeight < 5 {
+		m.viewportHeight = 5 // Minimum viewport
+	}
+	
+	// Adjust viewport to keep cursor visible
+	if m.cursor < m.viewportStart {
+		m.viewportStart = m.cursor
+	} else if m.cursor >= m.viewportStart+m.viewportHeight {
+		m.viewportStart = m.cursor - m.viewportHeight + 1
+	}
+	
+	// Ensure viewport doesn't go beyond bounds
+	if m.viewportStart < 0 {
+		m.viewportStart = 0
+	}
+	maxStart := itemCount - m.viewportHeight
+	if maxStart < 0 {
+		maxStart = 0
+	}
+	if m.viewportStart > maxStart {
+		m.viewportStart = maxStart
+	}
 }
