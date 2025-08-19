@@ -46,3 +46,8 @@ type collectionItemsLoaded struct {
 	items []api.CollectionItem
 	err   error
 }
+
+type globalSearchLoaded struct {
+	results []api.SearchResult
+	err     error
+}

@@ -56,3 +56,15 @@ type CollectionItem struct {
 	DatabaseID   *int   `json:"database_id"` // Nullable for non-database items
 	Archived     bool   `json:"archived"`
 }
+
+type SearchResult struct {
+	ID          int    `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Model       string `json:"model"` // "card", "dashboard", "collection", "table", "database", etc.
+	Archived    bool   `json:"archived"`
+	Collection  struct {
+		ID   interface{} `json:"id"` // Can be int or string ("root")
+		Name string      `json:"name"`
+	} `json:"collection"`
+}
