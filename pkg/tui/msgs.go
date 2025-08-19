@@ -32,3 +32,17 @@ type versionChecked struct {
 }
 
 type spinnerTick struct{}
+
+type connectionTested struct {
+	err error
+}
+
+type collectionsLoaded struct {
+	collections []api.Collection
+	err         error
+}
+
+type collectionItemsLoaded struct {
+	items []api.CollectionItem
+	err   error
+}

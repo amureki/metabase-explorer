@@ -88,6 +88,20 @@ func loadFields(client *api.MetabaseClient, tableID int) tea.Cmd {
 	}
 }
 
+func loadCollections(client *api.MetabaseClient) tea.Cmd {
+	return func() tea.Msg {
+		collections, err := client.GetCollections()
+		return collectionsLoaded{collections: collections, err: err}
+	}
+}
+
+func loadCollectionItems(client *api.MetabaseClient, collectionID interface{}) tea.Cmd {
+	return func() tea.Msg {
+		items, err := client.GetCollectionItems(collectionID)
+		return collectionItemsLoaded{items: items, err: err}
+	}
+}
+
 func tickSpinner() tea.Cmd {
 	return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg {
 		return spinnerTick{}
