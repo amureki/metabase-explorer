@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/amureki/metabase-explorer/pkg/util"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/sahilm/fuzzy"
 )
@@ -76,8 +75,7 @@ func (m Model) getWebURL() string {
 	case viewDatabases:
 		if len(m.databases) > 0 && m.cursor < len(m.databases) {
 			db := m.databases[m.cursor]
-			slug := util.ToSlug(db.Name)
-			return fmt.Sprintf("%s/browse/databases/%d-%s", baseURL, db.ID, slug)
+			return fmt.Sprintf("%s/browse/databases/%d", baseURL, db.ID)
 		}
 	case viewSchemas:
 		if len(m.schemas) > 0 && m.cursor < len(m.schemas) && m.selectedDatabase != nil {
@@ -86,8 +84,7 @@ func (m Model) getWebURL() string {
 			return fmt.Sprintf("%s/browse/databases/%d/schema/%s", baseURL, m.selectedDatabase.ID, schema.Name)
 		} else if m.selectedDatabase != nil {
 			db := m.selectedDatabase
-			slug := util.ToSlug(db.Name)
-			return fmt.Sprintf("%s/browse/databases/%d-%s", baseURL, db.ID, slug)
+			return fmt.Sprintf("%s/browse/databases/%d", baseURL, db.ID)
 		}
 	case viewTables:
 		if len(m.tables) > 0 && m.cursor < len(m.tables) && m.selectedDatabase != nil {
