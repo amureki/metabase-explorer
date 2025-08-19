@@ -24,7 +24,6 @@ archives:
     files:
       - LICENSE
       - README.md
-      - .env.example
 
 changelog:
   use: github-native
