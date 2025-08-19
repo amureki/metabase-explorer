@@ -1,6 +1,6 @@
 # Metabase Explorer
 
-A Terminal User Interface (TUI) for exploring Metabase database metadata. Browse databases, schemas, tables, and fields through an interactive interface that connects to Metabase via REST API.
+A Terminal User Interface (TUI) for exploring Metabase collections and database metadata. Browse collections, cards, dashboards, databases, schemas, tables, and fields through an interactive interface that connects to Metabase via REST API.
 
 <img src="https://github.com/user-attachments/assets/1e29f0f9-7ab3-48bf-a22a-436bc50fd285" alt="Metabase Explorer Demo" width="500" />
 
