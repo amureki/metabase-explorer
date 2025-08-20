@@ -231,21 +231,29 @@ func (c *MetabaseClient) GetCollectionItems(collectionID interface{}) ([]Collect
 		return nil, fmt.Errorf("failed to parse response: %v", err)
 	}
 
-	// Sort items to show collections first, then other items
+	// Sort items to show collections first, then dashboards, then metrics, then other items
 	var collections []CollectionItem
+	var dashboards []CollectionItem
+	var metrics []CollectionItem
 	var others []CollectionItem
 	
 	for _, item := range result.Data {
 		if item.Model == "collection" {
 			collections = append(collections, item)
+		} else if item.Model == "dashboard" {
+			dashboards = append(dashboards, item)
+		} else if item.Model == "metric" {
+			metrics = append(metrics, item)
 		} else {
 			others = append(others, item)
 		}
 	}
 	
-	// Combine collections first, then other items
+	// Combine collections first, then dashboards, then metrics, then other items
 	var sortedItems []CollectionItem
 	sortedItems = append(sortedItems, collections...)
+	sortedItems = append(sortedItems, dashboards...)
+	sortedItems = append(sortedItems, metrics...)
 	sortedItems = append(sortedItems, others...)
 	
 	return sortedItems, nil
