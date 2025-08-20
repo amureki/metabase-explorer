@@ -109,6 +109,20 @@ func loadCardDetail(client *api.MetabaseClient, cardID int) tea.Cmd {
 	}
 }
 
+func loadDashboardDetail(client *api.MetabaseClient, dashboardID int) tea.Cmd {
+	return func() tea.Msg {
+		detail, err := client.GetDashboardDetail(dashboardID)
+		return dashboardDetailLoaded{detail: detail, err: err}
+	}
+}
+
+func loadMetricDetail(client *api.MetabaseClient, metricID int) tea.Cmd {
+	return func() tea.Msg {
+		detail, err := client.GetMetricDetail(metricID)
+		return metricDetailLoaded{detail: detail, err: err}
+	}
+}
+
 func tickSpinner() tea.Cmd {
 	return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg {
 		return spinnerTick{}

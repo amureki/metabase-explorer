@@ -830,40 +830,37 @@ func (m Model) renderItemDetail(output *strings.Builder) {
 		output.WriteString("\n\n")
 	}
 
-	// Show detailed metadata if available (from card detail API)
-	if m.itemDetail != nil && item.Model == "card" {
-		// Creator information
-		if m.itemDetail.Creator != nil {
+	// Show detailed metadata if available (from detail API)
+	if m.itemDetail != nil {
+		if creator := m.itemDetail.GetCreator(); creator != nil {
 			output.WriteString(lipgloss.NewStyle().Bold(true).Render("Created by: "))
-			creatorName := fmt.Sprintf("%s %s", m.itemDetail.Creator.FirstName, m.itemDetail.Creator.LastName)
+			creatorName := fmt.Sprintf("%s %s", creator.FirstName, creator.LastName)
 			if creatorName == " " {
-				creatorName = m.itemDetail.Creator.Email
+				creatorName = creator.Email
 			}
 			output.WriteString(lipgloss.NewStyle().Foreground(ColorInfo).Render(creatorName))
 			output.WriteString("\n")
 		}
 
-		// Last editor information
-		if m.itemDetail.LastEditInfo != nil {
+		if lastEditInfo := m.itemDetail.GetLastEditInfo(); lastEditInfo != nil {
 			output.WriteString(lipgloss.NewStyle().Bold(true).Render("Last edited by: "))
-			editorName := fmt.Sprintf("%s %s", m.itemDetail.LastEditInfo.FirstName, m.itemDetail.LastEditInfo.LastName)
+			editorName := fmt.Sprintf("%s %s", lastEditInfo.FirstName, lastEditInfo.LastName)
 			if editorName == " " {
-				editorName = m.itemDetail.LastEditInfo.Email
+				editorName = lastEditInfo.Email
 			}
 			output.WriteString(lipgloss.NewStyle().Foreground(ColorInfo).Render(editorName))
 			output.WriteString("\n")
 		}
 
-		// Creation and update timestamps
-		if m.itemDetail.CreatedAt != "" {
+		if createdAt := m.itemDetail.GetCreatedAt(); createdAt != "" {
 			output.WriteString(lipgloss.NewStyle().Bold(true).Render("Created: "))
-			output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render(m.formatTimestamp(m.itemDetail.CreatedAt)))
+			output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render(m.formatTimestamp(createdAt)))
 			output.WriteString("\n")
 		}
 
-		if m.itemDetail.UpdatedAt != "" {
+		if updatedAt := m.itemDetail.GetUpdatedAt(); updatedAt != "" {
 			output.WriteString(lipgloss.NewStyle().Bold(true).Render("Updated: "))
-			output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render(m.formatTimestamp(m.itemDetail.UpdatedAt)))
+			output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render(m.formatTimestamp(updatedAt)))
 			output.WriteString("\n")
 		}
 

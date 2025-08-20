@@ -42,7 +42,7 @@ type Model struct {
 	selectedTable      *api.Table
 	selectedCollection *api.Collection
 	selectedItem       *api.CollectionItem
-	itemDetail         *api.CardDetail
+	itemDetail         api.DetailInfo
 	collectionStack    []*api.Collection // Track collection hierarchy for proper back navigation
 	viewportStart      int               // Starting index for viewport scrolling
 	viewportHeight     int               // Number of items that can be displayed at once
@@ -154,9 +154,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.cursor = 0
 							m.loading = true
 							m.error = ""
-							// Load detailed information for cards
+							// Load detailed information for cards, dashboards, and metrics
 							if item.Model == "card" {
 								return m, tea.Batch(loadCardDetail(m.client, item.ID), tickSpinner())
+							} else if item.Model == "dashboard" {
+								return m, tea.Batch(loadDashboardDetail(m.client, item.ID), tickSpinner())
+							} else if item.Model == "metric" {
+								return m, tea.Batch(loadMetricDetail(m.client, item.ID), tickSpinner())
 							}
 						}
 					} else if m.currentView == viewSchemas && len(m.schemas) > 0 {
@@ -418,9 +422,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.cursor = 0
 					m.loading = true
 					m.error = ""
-					// Load detailed information for cards
+					// Load detailed information for cards, dashboards, and metrics
 					if item.Model == "card" {
 						return m, tea.Batch(loadCardDetail(m.client, item.ID), tickSpinner())
+					} else if item.Model == "dashboard" {
+						return m, tea.Batch(loadDashboardDetail(m.client, item.ID), tickSpinner())
+					} else if item.Model == "metric" {
+						return m, tea.Batch(loadMetricDetail(m.client, item.ID), tickSpinner())
 					}
 				}
 			} else if m.currentView == viewSchemas && len(m.schemas) > 0 {
@@ -511,9 +519,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.cursor = 0
 					m.loading = true
 					m.error = ""
-					// Load detailed information for cards
+					// Load detailed information for cards, dashboards, and metrics
 					if item.Model == "card" {
 						return m, tea.Batch(loadCardDetail(m.client, item.ID), tickSpinner())
+					} else if item.Model == "dashboard" {
+						return m, tea.Batch(loadDashboardDetail(m.client, item.ID), tickSpinner())
+					} else if item.Model == "metric" {
+						return m, tea.Batch(loadMetricDetail(m.client, item.ID), tickSpinner())
 					}
 				}
 			} else if m.currentView == viewSchemas && len(m.schemas) > 0 {
@@ -704,6 +716,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case cardDetailLoaded:
+		m.loading = false
+		if msg.err != nil {
+			m.error = msg.err.Error()
+		} else {
+			m.itemDetail = msg.detail
+		}
+
+	case dashboardDetailLoaded:
+		m.loading = false
+		if msg.err != nil {
+			m.error = msg.err.Error()
+		} else {
+			m.itemDetail = msg.detail
+		}
+
+	case metricDetailLoaded:
 		m.loading = false
 		if msg.err != nil {
 			m.error = msg.err.Error()

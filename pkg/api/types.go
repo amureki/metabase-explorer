@@ -1,5 +1,27 @@
 package api
 
+type DetailInfo interface {
+	GetCreator() *UserInfo
+	GetLastEditInfo() *LastEditInfo
+	GetCreatedAt() string
+	GetUpdatedAt() string
+}
+
+type UserInfo struct {
+	ID        int    `json:"id"`
+	Email     string `json:"email"`
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+}
+
+type LastEditInfo struct {
+	ID        int    `json:"id"`
+	Email     string `json:"email"`
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	Timestamp string `json:"timestamp"`
+}
+
 type Database struct {
 	ID     int    `json:"id"`
 	Name   string `json:"name"`
@@ -58,26 +80,57 @@ type CollectionItem struct {
 }
 
 type CardDetail struct {
-	ID               int    `json:"id"`
-	Name             string `json:"name"`
-	Description      string `json:"description"`
-	CollectionID     int    `json:"collection_id"`
-	DatabaseID       *int   `json:"database_id"`
-	Archived         bool   `json:"archived"`
-	CreatorID        int    `json:"creator_id"`
-	CreatedAt        string `json:"created_at"`
-	UpdatedAt        string `json:"updated_at"`
-	LastEditInfo     *struct {
-		ID        int    `json:"id"`
-		Email     string `json:"email"`
-		FirstName string `json:"first_name"`
-		LastName  string `json:"last_name"`
-		Timestamp string `json:"timestamp"`
-	} `json:"last-edit-info"`
-	Creator          *struct {
-		ID        int    `json:"id"`
-		Email     string `json:"email"`
-		FirstName string `json:"first_name"`
-		LastName  string `json:"last_name"`
-	} `json:"creator"`
+	ID               int           `json:"id"`
+	Name             string        `json:"name"`
+	Description      string        `json:"description"`
+	CollectionID     int           `json:"collection_id"`
+	DatabaseID       *int          `json:"database_id"`
+	Archived         bool          `json:"archived"`
+	CreatorID        int           `json:"creator_id"`
+	CreatedAt        string        `json:"created_at"`
+	UpdatedAt        string        `json:"updated_at"`
+	LastEditInfo     *LastEditInfo `json:"last-edit-info"`
+	Creator          *UserInfo     `json:"creator"`
 }
+
+func (c *CardDetail) GetCreator() *UserInfo        { return c.Creator }
+func (c *CardDetail) GetLastEditInfo() *LastEditInfo { return c.LastEditInfo }
+func (c *CardDetail) GetCreatedAt() string         { return c.CreatedAt }
+func (c *CardDetail) GetUpdatedAt() string         { return c.UpdatedAt }
+
+type DashboardDetail struct {
+	ID               int           `json:"id"`
+	Name             string        `json:"name"`
+	Description      string        `json:"description"`
+	CollectionID     int           `json:"collection_id"`
+	Archived         bool          `json:"archived"`
+	CreatorID        int           `json:"creator_id"`
+	CreatedAt        string        `json:"created_at"`
+	UpdatedAt        string        `json:"updated_at"`
+	LastEditInfo     *LastEditInfo `json:"last-edit-info"`
+	Creator          *UserInfo     `json:"creator"`
+}
+
+func (d *DashboardDetail) GetCreator() *UserInfo        { return d.Creator }
+func (d *DashboardDetail) GetLastEditInfo() *LastEditInfo { return d.LastEditInfo }
+func (d *DashboardDetail) GetCreatedAt() string         { return d.CreatedAt }
+func (d *DashboardDetail) GetUpdatedAt() string         { return d.UpdatedAt }
+
+type MetricDetail struct {
+	ID               int           `json:"id"`
+	Name             string        `json:"name"`
+	Description      string        `json:"description"`
+	CollectionID     int           `json:"collection_id"`
+	DatabaseID       *int          `json:"database_id"`
+	Archived         bool          `json:"archived"`
+	CreatorID        int           `json:"creator_id"`
+	CreatedAt        string        `json:"created_at"`
+	UpdatedAt        string        `json:"updated_at"`
+	LastEditInfo     *LastEditInfo `json:"last-edit-info"`
+	Creator          *UserInfo     `json:"creator"`
+}
+
+func (m *MetricDetail) GetCreator() *UserInfo        { return m.Creator }
+func (m *MetricDetail) GetLastEditInfo() *LastEditInfo { return m.LastEditInfo }
+func (m *MetricDetail) GetCreatedAt() string         { return m.CreatedAt }
+func (m *MetricDetail) GetUpdatedAt() string         { return m.UpdatedAt }
