@@ -250,3 +250,46 @@ func (c *MetabaseClient) GetCollectionItems(collectionID interface{}) ([]Collect
 	
 	return sortedItems, nil
 }
+
+func (c *MetabaseClient) Search(query string) ([]SearchResult, error) {
+	baseURL, err := url.Parse(c.BaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base URL: %v", err)
+	}
+
+	apiURL, err := baseURL.Parse("/api/search")
+	if err != nil {
+		return nil, fmt.Errorf("failed to construct API URL: %v", err)
+	}
+
+	// Add query parameter if provided
+	if query != "" {
+		params := url.Values{}
+		params.Add("q", query)
+		params.Add("limit", "25") // Limit results to 25 items
+		apiURL.RawQuery = params.Encode()
+	}
+
+	req, _ := http.NewRequest("GET", apiURL.String(), nil)
+	req.Header.Set("X-API-Key", c.APIToken)
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to search: %d - %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Data []SearchResult `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to parse search response: %v", err)
+	}
+
+	return result.Data, nil
+}

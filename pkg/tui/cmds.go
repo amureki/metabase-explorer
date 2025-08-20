@@ -102,6 +102,13 @@ func loadCollectionItems(client *api.MetabaseClient, collectionID interface{}) t
 	}
 }
 
+func loadGlobalSearch(client *api.MetabaseClient, query string) tea.Cmd {
+	return func() tea.Msg {
+		results, err := client.Search(query)
+		return globalSearchLoaded{results: results, err: err}
+	}
+}
+
 func tickSpinner() tea.Cmd {
 	return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg {
 		return spinnerTick{}

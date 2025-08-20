@@ -5,89 +5,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/sahilm/fuzzy"
 )
 
-func (m *Model) updateSearch() {
-	// Only filter if we have actual search query content
-	if !m.searchMode || m.searchQuery == "" {
-		m.filteredIndices = nil
-		return
-	}
-
-	m.filteredIndices = nil
-
-	switch m.currentView {
-	case viewMainMenu:
-		// No search for main menu
-		return
-	case viewDatabases:
-		var names []string
-		for _, db := range m.databases {
-			names = append(names, db.Name)
-		}
-		matches := fuzzy.Find(m.searchQuery, names)
-		for _, match := range matches {
-			m.filteredIndices = append(m.filteredIndices, match.Index)
-		}
-	case viewCollections:
-		var names []string
-		for _, collection := range m.collections {
-			names = append(names, collection.Name)
-		}
-		matches := fuzzy.Find(m.searchQuery, names)
-		for _, match := range matches {
-			m.filteredIndices = append(m.filteredIndices, match.Index)
-		}
-	case viewCollectionItems:
-		var names []string
-		for _, item := range m.collectionItems {
-			names = append(names, item.Name)
-		}
-		matches := fuzzy.Find(m.searchQuery, names)
-		for _, match := range matches {
-			m.filteredIndices = append(m.filteredIndices, match.Index)
-		}
-	case viewSchemas:
-		var names []string
-		for _, schema := range m.schemas {
-			names = append(names, schema.Name)
-		}
-		matches := fuzzy.Find(m.searchQuery, names)
-		for _, match := range matches {
-			m.filteredIndices = append(m.filteredIndices, match.Index)
-		}
-	case viewTables:
-		var names []string
-		for _, table := range m.tables {
-			name := table.DisplayName
-			if name == "" {
-				name = table.Name
-			}
-			names = append(names, name)
-		}
-		matches := fuzzy.Find(m.searchQuery, names)
-		for _, match := range matches {
-			m.filteredIndices = append(m.filteredIndices, match.Index)
-		}
-	case viewFields:
-		var names []string
-		for _, field := range m.fields {
-			name := field.DisplayName
-			if name == "" {
-				name = field.Name
-			}
-			names = append(names, name)
-		}
-		matches := fuzzy.Find(m.searchQuery, names)
-		for _, match := range matches {
-			m.filteredIndices = append(m.filteredIndices, match.Index)
-		}
-	}
-
-	// Reset cursor when search results change
-	m.cursor = 0
-}
 
 func (m Model) getWebURL() string {
 	baseURL := strings.TrimSuffix(m.client.BaseURL, "/")
@@ -227,6 +146,21 @@ func (m Model) View() string {
 		} else {
 			path = fmt.Sprintf("Databases > %s > %s > %s", m.selectedDatabase.Name, m.selectedSchema.Name, tableName)
 		}
+	case viewGlobalSearch:
+		title = fmt.Sprintf("Metabase Explorer %s | Global Search", m.Version)
+		if m.globalSearchQuery != "" {
+			if len(m.searchResults) > 0 {
+				resultText := fmt.Sprintf("%d results", len(m.searchResults))
+				if len(m.searchResults) == 25 {
+					resultText += " (limited)" // Indicate when results are limited
+				}
+				path = fmt.Sprintf("Search: \"%s\" (%s)", m.globalSearchQuery, resultText)
+			} else {
+				path = fmt.Sprintf("Search: \"%s\" (no results)", m.globalSearchQuery)
+			}
+		} else {
+			path = "Global Search"
+		}
 	}
 
 	output.WriteString(lipgloss.NewStyle().Bold(true).Foreground(blue).Render(title))
@@ -235,13 +169,9 @@ func (m Model) View() string {
 
 	// Always reserve a line for search bar to prevent jumping
 	output.WriteString("\n")
-	if m.searchMode {
-		searchPrompt := "/" + m.searchQuery + "_"
+	if m.currentView == viewGlobalSearch && m.globalSearchQuery != "" {
+		searchPrompt := "/" + m.globalSearchQuery + "_"
 		output.WriteString(lipgloss.NewStyle().Foreground(blue).Render("Search: " + searchPrompt))
-		if len(m.filteredIndices) > 0 {
-			output.WriteString(" ")
-			output.WriteString(lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("(%d matches)", len(m.filteredIndices))))
-		}
 	} else if m.numberInput != "" {
 		output.WriteString(lipgloss.NewStyle().Foreground(blue).Render("Select: " + m.numberInput + "_"))
 	}
@@ -283,6 +213,8 @@ func (m Model) View() string {
 		m.renderTables(&output, blue, gray, white)
 	case viewFields:
 		m.renderFields(&output, blue, gray, white)
+	case viewGlobalSearch:
+		m.renderGlobalSearch(&output, blue, gray, white)
 	}
 
 	output.WriteString("\n")
@@ -298,82 +230,78 @@ func (m Model) getHelpText() string {
 	keyStyle := lipgloss.NewStyle().Foreground(blue)
 	descStyle := lipgloss.NewStyle().Foreground(gray)
 
-	if m.searchMode {
-		return keyStyle.Render("esc") + descStyle.Render(" cancel  ") +
-			keyStyle.Render("enter") + descStyle.Render(" select  ") +
-			keyStyle.Render("↑↓") + descStyle.Render(" navigate")
+	var help strings.Builder
+
+	// Navigation section - combine all arrows
+	var navigation strings.Builder
+	if m.currentView == viewMainMenu {
+		navigation.WriteString(keyStyle.Render("↑↓→"))
+		navigation.WriteString(descStyle.Render(" navigate  "))
+	} else if m.currentView == viewDatabases || m.currentView == viewCollections {
+		navigation.WriteString(keyStyle.Render("↑↓←→"))
+		navigation.WriteString(descStyle.Render(" navigate  "))
 	} else {
-		var help strings.Builder
-
-		// Navigation section - combine all arrows
-		var navigation strings.Builder
-		if m.currentView == viewMainMenu {
-			navigation.WriteString(keyStyle.Render("↑↓→"))
-			navigation.WriteString(descStyle.Render(" navigate  "))
-		} else if m.currentView == viewDatabases || m.currentView == viewCollections {
-			navigation.WriteString(keyStyle.Render("↑↓←→"))
-			navigation.WriteString(descStyle.Render(" navigate  "))
-		} else {
-			navigation.WriteString(keyStyle.Render("↑↓←→"))
-			navigation.WriteString(descStyle.Render(" navigate  "))
-		}
-
-		// Quick select (context-aware)
-		var itemCount int
-		switch m.currentView {
-		case viewMainMenu:
-			itemCount = 2 // Collections and Databases
-		case viewDatabases:
-			itemCount = len(m.databases)
-		case viewCollections:
-			itemCount = len(m.collections)
-		case viewCollectionItems:
-			itemCount = len(m.collectionItems)
-		case viewSchemas:
-			itemCount = len(m.schemas)
-		case viewTables:
-			itemCount = len(m.tables)
-		case viewFields:
-			itemCount = len(m.fields)
-		}
-
-		if m.currentView != viewFields && itemCount > 0 {
-			if itemCount < 10 {
-				navigation.WriteString(keyStyle.Render("1-9"))
-			} else {
-				navigation.WriteString(keyStyle.Render("01-99"))
-			}
-			navigation.WriteString(descStyle.Render(" select"))
-		}
-
-		// Actions section
-		var actions strings.Builder
-		actions.WriteString(keyStyle.Render("w"))
-		actions.WriteString(descStyle.Render(" web  "))
-		actions.WriteString(keyStyle.Render("/"))
-		actions.WriteString(descStyle.Render(" search  "))
-		actions.WriteString(keyStyle.Render("?"))
-		actions.WriteString(descStyle.Render(" help  "))
-		actions.WriteString(keyStyle.Render("q"))
-		actions.WriteString(descStyle.Render(" quit"))
-
-		// Combine sections on separate lines
-		help.WriteString(navigation.String())
-		help.WriteString("\n")
-		help.WriteString(actions.String())
-
-		// Add update notification if available
-		if m.updateAvailable {
-			help.WriteString("\n")
-			updateStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11")) // Yellow
-			help.WriteString(updateStyle.Render("⚠ Update available: "))
-			help.WriteString(updateStyle.Render(m.latestVersion))
-			help.WriteString(descStyle.Render(" - Run: "))
-			help.WriteString(keyStyle.Render("mbx update"))
-		}
-
-		return help.String()
+		navigation.WriteString(keyStyle.Render("↑↓←→"))
+		navigation.WriteString(descStyle.Render(" navigate  "))
 	}
+
+	// Quick select (context-aware)
+	var itemCount int
+	switch m.currentView {
+	case viewMainMenu:
+		itemCount = 2 // Collections and Databases
+	case viewDatabases:
+		itemCount = len(m.databases)
+	case viewCollections:
+		itemCount = len(m.collections)
+	case viewCollectionItems:
+		itemCount = len(m.collectionItems)
+	case viewGlobalSearch:
+		itemCount = len(m.searchResults)
+	case viewSchemas:
+		itemCount = len(m.schemas)
+	case viewTables:
+		itemCount = len(m.tables)
+	case viewFields:
+		itemCount = len(m.fields)
+	}
+
+	if m.currentView != viewFields && itemCount > 0 {
+		if itemCount < 10 {
+			navigation.WriteString(keyStyle.Render("1-9"))
+		} else {
+			navigation.WriteString(keyStyle.Render("01-99"))
+		}
+		navigation.WriteString(descStyle.Render(" select"))
+	}
+
+	// Actions section
+	var actions strings.Builder
+	actions.WriteString(keyStyle.Render("w"))
+	actions.WriteString(descStyle.Render(" web  "))
+	actions.WriteString(keyStyle.Render("/"))
+	actions.WriteString(descStyle.Render(" search  "))
+	actions.WriteString(keyStyle.Render("?"))
+	actions.WriteString(descStyle.Render(" help  "))
+	actions.WriteString(keyStyle.Render("q"))
+	actions.WriteString(descStyle.Render(" quit"))
+
+	// Combine sections on separate lines
+	help.WriteString(navigation.String())
+	help.WriteString("\n")
+	help.WriteString(actions.String())
+
+	// Add update notification if available
+	if m.updateAvailable {
+		help.WriteString("\n")
+		updateStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11")) // Yellow
+		help.WriteString(updateStyle.Render("⚠ Update available: "))
+		help.WriteString(updateStyle.Render(m.latestVersion))
+		help.WriteString(descStyle.Render(" - Run: "))
+		help.WriteString(keyStyle.Render("mbx update"))
+	}
+
+	return help.String()
 }
 
 func (m Model) renderDatabases(output *strings.Builder, blue, gray, white lipgloss.Color) {
@@ -382,22 +310,7 @@ func (m Model) renderDatabases(output *strings.Builder, blue, gray, white lipglo
 		return
 	}
 
-	// Show filtered or all databases
-	var itemsToShow []int
-
-	if m.searchMode && m.searchQuery != "" && len(m.filteredIndices) > 0 {
-		itemsToShow = m.filteredIndices
-	} else if m.searchMode && m.searchQuery != "" {
-		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No matches found"))
-		return
-	} else {
-		for i := range m.databases {
-			itemsToShow = append(itemsToShow, i)
-		}
-	}
-
-	for i, dbIndex := range itemsToShow {
-		db := m.databases[dbIndex]
+	for i, db := range m.databases {
 		var numberPrefix string
 		if len(m.databases) < 10 {
 			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%d ", i+1))
@@ -425,22 +338,7 @@ func (m Model) renderSchemas(output *strings.Builder, blue, gray, white lipgloss
 		return
 	}
 
-	// Show filtered or all schemas
-	var itemsToShow []int
-
-	if m.searchMode && m.searchQuery != "" && len(m.filteredIndices) > 0 {
-		itemsToShow = m.filteredIndices
-	} else if m.searchMode && m.searchQuery != "" {
-		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No matches found"))
-		return
-	} else {
-		for i := range m.schemas {
-			itemsToShow = append(itemsToShow, i)
-		}
-	}
-
-	for i, schemaIndex := range itemsToShow {
-		schema := m.schemas[schemaIndex]
+	for i, schema := range m.schemas {
 		var numberPrefix string
 		if len(m.schemas) < 10 {
 			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%d ", i+1))
@@ -468,22 +366,7 @@ func (m Model) renderTables(output *strings.Builder, blue, gray, white lipgloss.
 		return
 	}
 
-	// Show filtered or all tables
-	var itemsToShow []int
-
-	if m.searchMode && m.searchQuery != "" && len(m.filteredIndices) > 0 {
-		itemsToShow = m.filteredIndices
-	} else if m.searchMode && m.searchQuery != "" {
-		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No matches found"))
-		return
-	} else {
-		for i := range m.tables {
-			itemsToShow = append(itemsToShow, i)
-		}
-	}
-
-	for i, tableIndex := range itemsToShow {
-		table := m.tables[tableIndex]
+	for i, table := range m.tables {
 		name := table.DisplayName
 		if name == "" {
 			name = table.Name
@@ -515,22 +398,7 @@ func (m Model) renderFields(output *strings.Builder, blue, gray, white lipgloss.
 		return
 	}
 
-	// Show filtered or all fields
-	var itemsToShow []int
-
-	if m.searchMode && m.searchQuery != "" && len(m.filteredIndices) > 0 {
-		itemsToShow = m.filteredIndices
-	} else if m.searchMode && m.searchQuery != "" {
-		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No matches found"))
-		return
-	} else {
-		for i := range m.fields {
-			itemsToShow = append(itemsToShow, i)
-		}
-	}
-
-	for i, fieldIndex := range itemsToShow {
-		field := m.fields[fieldIndex]
+	for i, field := range m.fields {
 		name := field.DisplayName
 		if name == "" {
 			name = field.Name
@@ -648,22 +516,7 @@ func (m Model) renderCollections(output *strings.Builder, blue, gray, white lipg
 		return
 	}
 
-	// Show filtered or all collections
-	var itemsToShow []int
-
-	if m.searchMode && m.searchQuery != "" && len(m.filteredIndices) > 0 {
-		itemsToShow = m.filteredIndices
-	} else if m.searchMode && m.searchQuery != "" {
-		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No matches found"))
-		return
-	} else {
-		for i := range m.collections {
-			itemsToShow = append(itemsToShow, i)
-		}
-	}
-
-	for i, collectionIndex := range itemsToShow {
-		collection := m.collections[collectionIndex]
+	for i, collection := range m.collections {
 		var numberPrefix string
 		if len(m.collections) < 10 {
 			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%d ", i+1))
@@ -696,35 +549,20 @@ func (m Model) renderCollectionItems(output *strings.Builder, blue, gray, white 
 		return
 	}
 
-	// Show filtered or all collection items
-	var itemsToShow []int
-
-	if m.searchMode && m.searchQuery != "" && len(m.filteredIndices) > 0 {
-		itemsToShow = m.filteredIndices
-	} else if m.searchMode && m.searchQuery != "" {
-		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No matches found"))
-		return
-	} else {
-		for i := range m.collectionItems {
-			itemsToShow = append(itemsToShow, i)
-		}
-	}
-
 	// Apply viewport limiting for large lists
 	viewportEnd := m.viewportStart + m.viewportHeight
-	if viewportEnd > len(itemsToShow) {
-		viewportEnd = len(itemsToShow)
+	if viewportEnd > len(m.collectionItems) {
+		viewportEnd = len(m.collectionItems)
 	}
 	
 	// Show scroll indicators if there are items outside viewport
 	if m.viewportStart > 0 {
-		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("   ↑ ... (showing items " + fmt.Sprintf("%d-%d of %d)", m.viewportStart+1, viewportEnd, len(itemsToShow)) + ")"))
+		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("   ↑ ... (showing items " + fmt.Sprintf("%d-%d of %d)", m.viewportStart+1, viewportEnd, len(m.collectionItems)) + ")"))
 		output.WriteString("\n")
 	}
 
 	for i := m.viewportStart; i < viewportEnd; i++ {
-		itemIndex := itemsToShow[i]
-		item := m.collectionItems[itemIndex]
+		item := m.collectionItems[i]
 		var numberPrefix string
 		if len(m.collectionItems) < 10 {
 			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%d ", i+1))
@@ -756,8 +594,80 @@ func (m Model) renderCollectionItems(output *strings.Builder, blue, gray, white 
 	}
 	
 	// Show bottom scroll indicator if there are more items below
-	if viewportEnd < len(itemsToShow) {
-		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("   ↓ ... (showing items " + fmt.Sprintf("%d-%d of %d)", m.viewportStart+1, viewportEnd, len(itemsToShow)) + ")"))
+	if viewportEnd < len(m.collectionItems) {
+		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("   ↓ ... (showing items " + fmt.Sprintf("%d-%d of %d)", m.viewportStart+1, viewportEnd, len(m.collectionItems)) + ")"))
+		output.WriteString("\n")
+	}
+}
+
+func (m Model) renderGlobalSearch(output *strings.Builder, blue, gray, white lipgloss.Color) {
+	if len(m.searchResults) == 0 {
+		if m.globalSearchQuery == "" {
+			output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("Type to start searching across all Metabase content..."))
+		} else if len(m.globalSearchQuery) < 2 {
+			output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("Type at least 2 characters to search..."))
+		} else {
+			output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No results found"))
+		}
+		output.WriteString("\n")
+		return
+	}
+
+	for i, result := range m.searchResults {
+		var numberPrefix string
+		if len(m.searchResults) < 10 {
+			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%d ", i+1))
+		} else {
+			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%02d ", i+1))
+		}
+
+		if i == m.cursor {
+			output.WriteString(numberPrefix)
+			output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("▶ " + result.Name))
+		} else {
+			output.WriteString(numberPrefix)
+			output.WriteString("  " + result.Name)
+		}
+
+		// Add type info with color coding
+		if result.Model != "" {
+			var typeColor lipgloss.Color
+			switch result.Model {
+			case "collection":
+				typeColor = lipgloss.Color("13") // Magenta
+			case "dashboard":
+				typeColor = lipgloss.Color("14") // Cyan
+			case "card":
+				typeColor = lipgloss.Color("10") // Green
+			case "table":
+				typeColor = lipgloss.Color("11") // Yellow
+			case "database":
+				typeColor = lipgloss.Color("9")  // Red
+			default:
+				typeColor = lipgloss.Color("8")  // Dark gray
+			}
+			
+			output.WriteString(" ")
+			output.WriteString(lipgloss.NewStyle().Foreground(typeColor).Render("[" + result.Model + "]"))
+		}
+
+		// Add collection context if available
+		if result.Collection.Name != "" {
+			output.WriteString(" ")
+			output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("in " + result.Collection.Name))
+		}
+
+		// Add description if available
+		if result.Description != "" && len(result.Description) > 0 {
+			// Truncate long descriptions
+			desc := result.Description
+			if len(desc) > 60 {
+				desc = desc[:57] + "..."
+			}
+			output.WriteString(" ")
+			output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("(" + desc + ")"))
+		}
+
 		output.WriteString("\n")
 	}
 }

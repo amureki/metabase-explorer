@@ -22,6 +22,7 @@ const (
 	viewFields
 	viewCollections
 	viewCollectionItems
+	viewGlobalSearch
 )
 
 type Model struct {
@@ -31,6 +32,8 @@ type Model struct {
 	fields             []api.Field
 	collections        []api.Collection
 	collectionItems    []api.CollectionItem
+	searchResults      []api.SearchResult
+	globalSearchQuery  string
 	cursor             int
 	loading            bool
 	error              string
@@ -43,9 +46,6 @@ type Model struct {
 	collectionStack    []*api.Collection // Track collection hierarchy for proper back navigation
 	viewportStart      int               // Starting index for viewport scrolling
 	viewportHeight     int               // Number of items that can be displayed at once
-	searchMode         bool
-	searchQuery        string
-	filteredIndices    []int
 	spinnerIndex       int
 	numberInput        string
 	helpMode           bool
@@ -97,93 +97,7 @@ func (m Model) Init() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		// Handle search mode
-		if m.searchMode {
-			switch msg.String() {
-			case "esc":
-				m.searchMode = false
-				m.searchQuery = ""
-				m.filteredIndices = nil
-				m.cursor = 0
-			case "enter":
-				// Select from filtered results
-				if len(m.filteredIndices) > 0 && m.cursor < len(m.filteredIndices) {
-					actualIndex := m.filteredIndices[m.cursor]
-					m.cursor = actualIndex
-					m.searchMode = false
-					m.searchQuery = ""
-					m.filteredIndices = nil
-
-					// Trigger selection
-					if m.currentView == viewDatabases && len(m.databases) > 0 {
-						m.selectedDatabase = &m.databases[actualIndex]
-						m.currentView = viewSchemas
-						m.cursor = 0
-						m.loading = true
-						m.error = ""
-						return m, tea.Batch(loadSchemas(m.client, m.selectedDatabase.ID), tickSpinner())
-					} else if m.currentView == viewCollections && len(m.collections) > 0 {
-						m.selectedCollection = &m.collections[actualIndex]
-						m.collectionStack = nil // Clear stack when entering from root collections
-						m.currentView = viewCollectionItems
-						m.cursor = 0
-						m.loading = true
-						m.error = ""
-						return m, tea.Batch(loadCollectionItems(m.client, m.selectedCollection.ID), tickSpinner())
-					} else if m.currentView == viewCollectionItems && len(m.collectionItems) > 0 {
-						item := m.collectionItems[actualIndex]
-						if item.Model == "collection" {
-							// Push current collection to stack before drilling into sub-collection
-							m.collectionStack = append(m.collectionStack, m.selectedCollection)
-							m.selectedCollection = &api.Collection{
-								ID:   item.ID,
-								Name: item.Name,
-							}
-							m.currentView = viewCollectionItems
-							m.cursor = 0
-							m.loading = true
-							m.error = ""
-							return m, tea.Batch(loadCollectionItems(m.client, item.ID), tickSpinner())
-						}
-					} else if m.currentView == viewSchemas && len(m.schemas) > 0 {
-						m.selectedSchema = &m.schemas[actualIndex]
-						m.currentView = viewTables
-						m.cursor = 0
-						m.loading = true
-						m.error = ""
-						return m, tea.Batch(loadTablesForSchema(m.client, m.selectedDatabase.ID, m.selectedSchema.Name), tickSpinner())
-					} else if m.currentView == viewTables && len(m.tables) > 0 {
-						m.selectedTable = &m.tables[actualIndex]
-						m.currentView = viewFields
-						m.cursor = 0
-						m.loading = true
-						m.error = ""
-						return m, tea.Batch(loadFields(m.client, m.selectedTable.ID), tickSpinner())
-					}
-				}
-			case "backspace":
-				if len(m.searchQuery) > 0 {
-					m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
-					m.updateSearch()
-				}
-			case "up", "k":
-				if m.cursor > 0 {
-					m.cursor--
-				}
-			case "down", "j":
-				if len(m.filteredIndices) > 0 && m.cursor < len(m.filteredIndices)-1 {
-					m.cursor++
-				}
-			default:
-				// Add character to search query
-				if len(msg.String()) == 1 {
-					m.searchQuery += msg.String()
-					m.updateSearch()
-				}
-			}
-			return m, nil
-		}
-
+	
 		// Normal navigation mode
 		switch msg.String() {
 		case "ctrl+c", "q":
@@ -195,12 +109,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "/":
-			if m.helpMode || m.currentView == viewMainMenu {
+			if m.helpMode {
 				return m, nil
 			}
-			m.searchMode = true
-			m.searchQuery = ""
+			// Enter global search mode
+			m.currentView = viewGlobalSearch
+			m.globalSearchQuery = ""
 			m.cursor = 0
+			m.loading = false
+			m.error = ""
+			m.searchResults = nil // Start with empty results
 			return m, nil
 		case "0", "1", "2", "3", "4", "5", "6", "7", "8", "9":
 			if m.helpMode {
@@ -278,6 +196,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor++
 			} else if m.currentView == viewFields && m.cursor < len(m.fields)-1 {
 				m.cursor++
+			} else if m.currentView == viewGlobalSearch && m.cursor < len(m.searchResults)-1 {
+				m.cursor++
 			}
 		case "left", "h":
 			if m.helpMode {
@@ -325,6 +245,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor = 0
 				m.selectedTable = nil
 				m.fields = nil
+			} else if m.currentView == viewGlobalSearch {
+				m.currentView = viewMainMenu
+				m.cursor = 0
+				m.searchResults = nil
+				m.globalSearchQuery = ""
 			}
 		case "right", "l":
 			if m.helpMode {
@@ -497,6 +422,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.error = fmt.Sprintf("Failed to open browser: %v", err)
 			}
 		case "backspace":
+			// Handle backspace in global search
+			if m.currentView == viewGlobalSearch && len(m.globalSearchQuery) > 0 {
+				m.globalSearchQuery = m.globalSearchQuery[:len(m.globalSearchQuery)-1]
+				m.cursor = 0
+				
+				// Only search if query has at least 2 characters, otherwise clear results
+				if len(m.globalSearchQuery) >= 2 {
+					m.loading = true
+					m.error = ""
+					return m, tea.Batch(loadGlobalSearch(m.client, m.globalSearchQuery), tickSpinner())
+				} else {
+					m.searchResults = nil // Clear results for short queries
+				}
+			}
 			// Keep backspace as alternative to left arrow
 			if m.numberInput != "" {
 				// Clear number input
@@ -584,6 +523,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectedTable = nil
 				m.fields = nil
 			}
+		default:
+			// Handle typing in global search view
+			if m.currentView == viewGlobalSearch && !m.loading {
+				if len(msg.String()) == 1 {
+					// Add character to global search query
+					m.globalSearchQuery += msg.String()
+					m.cursor = 0
+					
+					// Only search if query has at least 2 characters
+					if len(m.globalSearchQuery) >= 2 {
+						m.loading = true
+						m.error = ""
+						return m, tea.Batch(loadGlobalSearch(m.client, m.globalSearchQuery), tickSpinner())
+					}
+				}
+			}
 		}
 
 	case connectionTested:
@@ -617,6 +572,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.collectionItems) > 0 {
 				m.updateViewport(len(m.collectionItems))
 			}
+		}
+
+	case globalSearchLoaded:
+		m.loading = false
+		if msg.err != nil {
+			m.error = msg.err.Error()
+		} else {
+			m.searchResults = msg.results
 		}
 
 	case schemasLoaded:
