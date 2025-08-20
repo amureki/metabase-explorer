@@ -102,6 +102,13 @@ func loadCollectionItems(client *api.MetabaseClient, collectionID interface{}) t
 	}
 }
 
+func loadCardDetail(client *api.MetabaseClient, cardID int) tea.Cmd {
+	return func() tea.Msg {
+		detail, err := client.GetCardDetail(cardID)
+		return cardDetailLoaded{detail: detail, err: err}
+	}
+}
+
 func tickSpinner() tea.Cmd {
 	return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg {
 		return spinnerTick{}

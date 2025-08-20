@@ -56,3 +56,28 @@ type CollectionItem struct {
 	DatabaseID   *int   `json:"database_id"` // Nullable for non-database items
 	Archived     bool   `json:"archived"`
 }
+
+type CardDetail struct {
+	ID               int    `json:"id"`
+	Name             string `json:"name"`
+	Description      string `json:"description"`
+	CollectionID     int    `json:"collection_id"`
+	DatabaseID       *int   `json:"database_id"`
+	Archived         bool   `json:"archived"`
+	CreatorID        int    `json:"creator_id"`
+	CreatedAt        string `json:"created_at"`
+	UpdatedAt        string `json:"updated_at"`
+	LastEditInfo     *struct {
+		ID        int    `json:"id"`
+		Email     string `json:"email"`
+		FirstName string `json:"first_name"`
+		LastName  string `json:"last_name"`
+		Timestamp string `json:"timestamp"`
+	} `json:"last-edit-info"`
+	Creator          *struct {
+		ID        int    `json:"id"`
+		Email     string `json:"email"`
+		FirstName string `json:"first_name"`
+		LastName  string `json:"last_name"`
+	} `json:"creator"`
+}

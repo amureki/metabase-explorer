@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/sahilm/fuzzy"
@@ -146,6 +147,22 @@ func (m Model) getWebURL() string {
 			// Fallback to table reference page
 			return fmt.Sprintf("%s/reference/databases/%d/tables/%d", baseURL, m.selectedDatabase.ID, m.selectedTable.ID)
 		}
+	case viewItemDetail:
+		if m.selectedItem != nil {
+			switch m.selectedItem.Model {
+			case "card":
+				return fmt.Sprintf("%s/question/%d", baseURL, m.selectedItem.ID)
+			case "dashboard":
+				return fmt.Sprintf("%s/dashboard/%d", baseURL, m.selectedItem.ID)
+			case "collection":
+				return fmt.Sprintf("%s/collection/%d", baseURL, m.selectedItem.ID)
+			default:
+				// Fallback to the current collection
+				if m.selectedCollection != nil {
+					return fmt.Sprintf("%s/collection/%v", baseURL, m.selectedCollection.ID)
+				}
+			}
+		}
 	}
 
 	return baseURL
@@ -196,6 +213,17 @@ func (m Model) View() string {
 		} else {
 			path = strings.Join(pathParts, " > ")
 		}
+	case viewItemDetail:
+		title = fmt.Sprintf("Metabase Explorer %s | Item Details", m.Version)
+		// Build breadcrumb path showing collection hierarchy with item name
+		var pathParts []string
+		pathParts = append(pathParts, "Collections")
+		for _, collection := range m.collectionStack {
+			pathParts = append(pathParts, collection.Name)
+		}
+		pathParts = append(pathParts, m.selectedCollection.Name)
+		pathParts = append(pathParts, m.selectedItem.Name)
+		path = strings.Join(pathParts, " > ")
 	case viewSchemas:
 		title = fmt.Sprintf("Metabase Explorer %s | Database schemas", m.Version)
 		if len(m.schemas) > 0 {
@@ -271,6 +299,8 @@ func (m Model) View() string {
 		m.renderCollections(&output)
 	case viewCollectionItems:
 		m.renderCollectionItems(&output)
+	case viewItemDetail:
+		m.renderItemDetail(&output)
 	case viewSchemas:
 		m.renderSchemas(&output)
 	case viewTables:
@@ -750,11 +780,6 @@ func (m Model) renderCollectionItems(output *strings.Builder) {
 			output.WriteString(lipgloss.NewStyle().Foreground(typeColor).Render("[" + item.Model + "]"))
 		}
 
-		// Add description if available
-		if item.Description != "" {
-			output.WriteString(" ")
-			output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("(" + item.Description + ")"))
-		}
 
 		output.WriteString("\n")
 	}
@@ -775,4 +800,97 @@ func (m Model) renderCollectionItems(output *strings.Builder) {
 		}
 		output.WriteString("\n")
 	}
+}
+
+func (m Model) renderItemDetail(output *strings.Builder) {
+	if m.selectedItem == nil {
+		output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("No item selected"))
+		return
+	}
+
+	item := m.selectedItem
+
+	// Item Name (title)
+	output.WriteString(lipgloss.NewStyle().Bold(true).Foreground(ColorPrimary).Render(item.Name))
+	output.WriteString("\n\n")
+
+	// Item Description
+	if item.Description != "" {
+		output.WriteString(lipgloss.NewStyle().Bold(true).Render("Description:"))
+		output.WriteString("\n")
+		// Wrap description text to fit terminal width (conservative width with margin)
+		wrappedDesc := lipgloss.NewStyle().
+			Foreground(ColorPrimary).
+			Width(80).
+			Render(item.Description)
+		output.WriteString(wrappedDesc)
+		output.WriteString("\n\n")
+	} else {
+		output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("No description available"))
+		output.WriteString("\n\n")
+	}
+
+	// Show detailed metadata if available (from card detail API)
+	if m.itemDetail != nil && item.Model == "card" {
+		// Creator information
+		if m.itemDetail.Creator != nil {
+			output.WriteString(lipgloss.NewStyle().Bold(true).Render("Created by: "))
+			creatorName := fmt.Sprintf("%s %s", m.itemDetail.Creator.FirstName, m.itemDetail.Creator.LastName)
+			if creatorName == " " {
+				creatorName = m.itemDetail.Creator.Email
+			}
+			output.WriteString(lipgloss.NewStyle().Foreground(ColorInfo).Render(creatorName))
+			output.WriteString("\n")
+		}
+
+		// Last editor information
+		if m.itemDetail.LastEditInfo != nil {
+			output.WriteString(lipgloss.NewStyle().Bold(true).Render("Last edited by: "))
+			editorName := fmt.Sprintf("%s %s", m.itemDetail.LastEditInfo.FirstName, m.itemDetail.LastEditInfo.LastName)
+			if editorName == " " {
+				editorName = m.itemDetail.LastEditInfo.Email
+			}
+			output.WriteString(lipgloss.NewStyle().Foreground(ColorInfo).Render(editorName))
+			output.WriteString("\n")
+		}
+
+		// Creation and update timestamps
+		if m.itemDetail.CreatedAt != "" {
+			output.WriteString(lipgloss.NewStyle().Bold(true).Render("Created: "))
+			output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render(m.formatTimestamp(m.itemDetail.CreatedAt)))
+			output.WriteString("\n")
+		}
+
+		if m.itemDetail.UpdatedAt != "" {
+			output.WriteString(lipgloss.NewStyle().Bold(true).Render("Updated: "))
+			output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render(m.formatTimestamp(m.itemDetail.UpdatedAt)))
+			output.WriteString("\n")
+		}
+
+		output.WriteString("\n")
+	}
+
+	// Archived status
+	if item.Archived {
+		output.WriteString(lipgloss.NewStyle().Bold(true).Foreground(ColorWarning).Render("⚠ This item is archived"))
+	}
+}
+
+func (m Model) formatTimestamp(timestamp string) string {
+	if timestamp == "" {
+		return ""
+	}
+
+	// Parse the timestamp (assuming ISO 8601 format)
+	t, err := time.Parse(time.RFC3339, timestamp)
+	if err != nil {
+		// Try alternative format if RFC3339 fails
+		t, err = time.Parse("2006-01-02T15:04:05.000000Z", timestamp)
+		if err != nil {
+			return timestamp // Return as-is if parsing fails
+		}
+	}
+
+	// Format as a human-readable date
+	return t.Format("Jan 2, 2006 at 3:04 PM")
 }

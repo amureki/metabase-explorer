@@ -46,3 +46,8 @@ type collectionItemsLoaded struct {
 	items []api.CollectionItem
 	err   error
 }
+
+type cardDetailLoaded struct {
+	detail *api.CardDetail
+	err    error
+}

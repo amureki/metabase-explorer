@@ -250,3 +250,36 @@ func (c *MetabaseClient) GetCollectionItems(collectionID interface{}) ([]Collect
 	
 	return sortedItems, nil
 }
+
+func (c *MetabaseClient) GetCardDetail(cardID int) (*CardDetail, error) {
+	baseURL, err := url.Parse(c.BaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base URL: %v", err)
+	}
+
+	apiURL, err := baseURL.Parse(fmt.Sprintf("/api/card/%d", cardID))
+	if err != nil {
+		return nil, fmt.Errorf("failed to construct API URL: %v", err)
+	}
+
+	req, _ := http.NewRequest("GET", apiURL.String(), nil)
+	req.Header.Set("X-API-Key", c.APIToken)
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to get card detail: %d - %s", resp.StatusCode, string(body))
+	}
+
+	var card CardDetail
+	if err := json.NewDecoder(resp.Body).Decode(&card); err != nil {
+		return nil, err
+	}
+
+	return &card, nil
+}
