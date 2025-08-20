@@ -22,6 +22,7 @@ const (
 	viewFields
 	viewCollections
 	viewCollectionItems
+	viewItemDetail
 )
 
 type Model struct {
@@ -40,6 +41,8 @@ type Model struct {
 	selectedSchema     *api.Schema
 	selectedTable      *api.Table
 	selectedCollection *api.Collection
+	selectedItem       *api.CollectionItem
+	itemDetail         *api.CardDetail
 	collectionStack    []*api.Collection // Track collection hierarchy for proper back navigation
 	viewportStart      int               // Starting index for viewport scrolling
 	viewportHeight     int               // Number of items that can be displayed at once
@@ -144,6 +147,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.loading = true
 							m.error = ""
 							return m, tea.Batch(loadCollectionItems(m.client, item.ID), tickSpinner())
+						} else {
+							// Show item detail for non-collection items
+							m.selectedItem = &item
+							m.currentView = viewItemDetail
+							m.cursor = 0
+							m.loading = true
+							m.error = ""
+							// Load detailed information for cards
+							if item.Model == "card" {
+								return m, tea.Batch(loadCardDetail(m.client, item.ID), tickSpinner())
+							}
 						}
 					} else if m.currentView == viewSchemas && len(m.schemas) > 0 {
 						m.selectedSchema = &m.schemas[actualIndex]
@@ -310,6 +324,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.selectedCollection = nil
 					m.collectionItems = nil
 				}
+			} else if m.currentView == viewItemDetail {
+				// Go back to collection items
+				m.currentView = viewCollectionItems
+				m.cursor = 0
+				m.selectedItem = nil
+				m.itemDetail = nil
 			} else if m.currentView == viewSchemas {
 				m.currentView = viewDatabases
 				m.cursor = 0
@@ -391,8 +411,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.loading = true
 					m.error = ""
 					return m, tea.Batch(loadCollectionItems(m.client, item.ID), tickSpinner())
+				} else {
+					// Show item detail for non-collection items
+					m.selectedItem = &item
+					m.currentView = viewItemDetail
+					m.cursor = 0
+					m.loading = true
+					m.error = ""
+					// Load detailed information for cards
+					if item.Model == "card" {
+						return m, tea.Batch(loadCardDetail(m.client, item.ID), tickSpinner())
+					}
 				}
-				// For non-collection items (cards, dashboards), do nothing or could open in web
 			} else if m.currentView == viewSchemas && len(m.schemas) > 0 {
 				m.selectedSchema = &m.schemas[m.cursor]
 				m.currentView = viewTables
@@ -474,8 +504,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.loading = true
 					m.error = ""
 					return m, tea.Batch(loadCollectionItems(m.client, item.ID), tickSpinner())
+				} else {
+					// Show item detail for non-collection items
+					m.selectedItem = &item
+					m.currentView = viewItemDetail
+					m.cursor = 0
+					m.loading = true
+					m.error = ""
+					// Load detailed information for cards
+					if item.Model == "card" {
+						return m, tea.Batch(loadCardDetail(m.client, item.ID), tickSpinner())
+					}
 				}
-				// For non-collection items (cards, dashboards), do nothing or could open in web
 			} else if m.currentView == viewSchemas && len(m.schemas) > 0 {
 				m.selectedSchema = &m.schemas[m.cursor]
 				m.currentView = viewTables
@@ -523,6 +563,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.selectedCollection = nil
 					m.collectionItems = nil
 				}
+			} else if m.currentView == viewItemDetail {
+				// Go back to collection items
+				m.currentView = viewCollectionItems
+				m.cursor = 0
+				m.selectedItem = nil
+				m.itemDetail = nil
 			} else if m.currentView == viewSchemas {
 				m.currentView = viewDatabases
 				m.cursor = 0
@@ -568,6 +614,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.selectedCollection = nil
 					m.collectionItems = nil
 				}
+			} else if m.currentView == viewItemDetail {
+				// Go back to collection items
+				m.currentView = viewCollectionItems
+				m.cursor = 0
+				m.selectedItem = nil
+				m.itemDetail = nil
 			} else if m.currentView == viewSchemas {
 				m.currentView = viewDatabases
 				m.cursor = 0
@@ -649,6 +701,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.error = msg.err.Error()
 		} else {
 			m.fields = msg.fields
+		}
+
+	case cardDetailLoaded:
+		m.loading = false
+		if msg.err != nil {
+			m.error = msg.err.Error()
+		} else {
+			m.itemDetail = msg.detail
 		}
 
 	case versionChecked:
