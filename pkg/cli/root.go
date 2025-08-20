@@ -26,10 +26,10 @@ USAGE:
 OPTIONS:
     -h, --help                Show this help message
     -v, --version             Show version information
-        --url <url>           Metabase URL (overrides config)
-        --token <token>       API token (overrides config)
-        --profile <name>      Configuration profile to use
-        --config <path>       Custom config file location
+    -u, --url <url>           Metabase URL (overrides config)
+    -t, --token <token>       API token (overrides config)
+    -p, --profile <name>      Configuration profile to use
+    -c, --config <path>       Custom config file location
 
 COMMANDS:
     init                               Interactive setup wizard
@@ -63,22 +63,22 @@ func Execute(args []string, ver string) {
 			showVersion = true
 		case "-h", "--help":
 			showHelp = true
-		case "--url":
+		case "-u", "--url":
 			if i+1 < len(args) {
 				metabaseURL = args[i+1]
 				i++
 			}
-		case "--token":
+		case "-t", "--token":
 			if i+1 < len(args) {
 				apiToken = args[i+1]
 				i++
 			}
-		case "--profile":
+		case "-p", "--profile":
 			if i+1 < len(args) {
 				profile = args[i+1]
 				i++
 			}
-		case "--config":
+		case "-c", "--config":
 			if i+1 < len(args) {
 				configFile = args[i+1]
 				i++
