@@ -46,6 +46,7 @@ type Model struct {
 	collectionStack    []*api.Collection // Track collection hierarchy for proper back navigation
 	viewportStart      int               // Starting index for viewport scrolling
 	viewportHeight     int               // Number of items that can be displayed at once
+	terminalWidth      int               // Terminal width for text wrapping
 	searchMode         bool
 	searchQuery        string
 	filteredIndices    []int
@@ -77,10 +78,12 @@ Run 'mbx --help' for more information.
 
 	client := api.NewMetabaseClient(metabaseURL, apiToken)
 	return Model{
-		loading:     false,
-		client:      client,
-		currentView: viewMainMenu,
-		Version:     version,
+		loading:        false,
+		client:         client,
+		currentView:    viewMainMenu,
+		Version:        version,
+		terminalWidth:  80, // Conservative default
+		viewportHeight: 15, // Conservative default
 	}
 }
 
@@ -649,6 +652,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.fields = nil
 			}
 		}
+
+	case tea.WindowSizeMsg:
+		m.terminalWidth = msg.Width
+		// Conservative estimate for viewport height
+		m.viewportHeight = msg.Height - 10
 
 	case connectionTested:
 		if msg.err != nil {

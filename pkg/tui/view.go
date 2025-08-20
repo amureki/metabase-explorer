@@ -426,14 +426,25 @@ func (m Model) renderDatabases(output *strings.Builder) {
 			numberPrefix = lipgloss.NewStyle().Foreground(ColorMuted).Render(fmt.Sprintf("%02d ", i+1))
 		}
 
+		// Calculate available width for database name
+		var prefixWidth int
+		if len(m.databases) < 10 {
+			prefixWidth = 4 // "1 ▶ " or "1   "
+		} else {
+			prefixWidth = 5 // "02 ▶ " or "02   "
+		}
+		engineWidth := len(db.Engine) + 3 // " (" + engine + ")"
+		availableWidth := m.terminalWidth - prefixWidth - engineWidth - 1 // -1 for safety margin
+		trimmedName := m.trimText(db.Name, availableWidth)
+
 		if i == m.cursor {
 			output.WriteString(numberPrefix)
-			output.WriteString(lipgloss.NewStyle().Foreground(ColorSelected).Bold(true).Render("▶ " + db.Name))
+			output.WriteString(lipgloss.NewStyle().Foreground(ColorSelected).Bold(true).Render("▶ " + trimmedName))
 			output.WriteString(" ")
 			output.WriteString(lipgloss.NewStyle().Foreground(getItemTypeColor("database")).Render("(" + db.Engine + ")"))
 		} else {
 			output.WriteString(numberPrefix)
-			output.WriteString("  " + db.Name + " ")
+			output.WriteString("  " + trimmedName + " ")
 			output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("(" + db.Engine + ")"))
 		}
 		output.WriteString("\n")
@@ -517,12 +528,22 @@ func (m Model) renderTables(output *strings.Builder) {
 			numberPrefix = lipgloss.NewStyle().Foreground(ColorMuted).Render(fmt.Sprintf("%02d ", i+1))
 		}
 
+		// Calculate available width for table name
+		var prefixWidth int
+		if len(m.tables) < 10 {
+			prefixWidth = 4 // "1 ▶ " or "1   "
+		} else {
+			prefixWidth = 5 // "02 ▶ " or "02   "
+		}
+		availableWidth := m.terminalWidth - prefixWidth - 1 // -1 for safety margin
+		trimmedName := m.trimText(name, availableWidth)
+
 		if i == m.cursor {
 			output.WriteString(numberPrefix)
-			output.WriteString(lipgloss.NewStyle().Foreground(ColorSelected).Bold(true).Render("▶ " + name))
+			output.WriteString(lipgloss.NewStyle().Foreground(ColorSelected).Bold(true).Render("▶ " + trimmedName))
 		} else {
 			output.WriteString(numberPrefix)
-			output.WriteString("  " + name)
+			output.WriteString("  " + trimmedName)
 		}
 
 		output.WriteString("\n")
@@ -694,20 +715,22 @@ func (m Model) renderCollections(output *strings.Builder) {
 			numberPrefix = lipgloss.NewStyle().Foreground(ColorMuted).Render(fmt.Sprintf("%02d ", i+1))
 		}
 
+		// Calculate available width for collection name
+		var prefixWidth int
+		if len(m.collections) < 10 {
+			prefixWidth = 4 // "1 ▶ " or "1   "
+		} else {
+			prefixWidth = 5 // "02 ▶ " or "02   "
+		}
+		availableWidth := m.terminalWidth - prefixWidth - 1 // -1 for safety margin
+		trimmedName := m.trimText(collection.Name, availableWidth)
+
 		if i == m.cursor {
 			output.WriteString(numberPrefix)
-			output.WriteString(lipgloss.NewStyle().Foreground(ColorSelected).Bold(true).Render("▶ " + collection.Name))
-			if collection.Description != "" {
-				output.WriteString(" ")
-				output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("(" + collection.Description + ")"))
-			}
+			output.WriteString(lipgloss.NewStyle().Foreground(ColorSelected).Bold(true).Render("▶ " + trimmedName))
 		} else {
 			output.WriteString(numberPrefix)
-			output.WriteString("  " + collection.Name)
-			if collection.Description != "" {
-				output.WriteString(" ")
-				output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("(" + collection.Description + ")"))
-			}
+			output.WriteString("  " + trimmedName)
 		}
 		output.WriteString("\n")
 	}
@@ -766,12 +789,28 @@ func (m Model) renderCollectionItems(output *strings.Builder) {
 			numberPrefix = lipgloss.NewStyle().Foreground(ColorMuted).Render(fmt.Sprintf("%02d ", i+1))
 		}
 
+		// Calculate available width for item name
+		// Number prefix: 2-3 chars, selector: 2 chars ("▶ " or "  ")
+		var prefixWidth int
+		if len(m.collectionItems) < 10 {
+			prefixWidth = 2 + 2 // "1 " + "▶ "
+		} else {
+			prefixWidth = 3 + 2 // "02 " + "▶ "
+		}
+		typeInfoWidth := 0
+		if item.Model != "" {
+			typeInfoWidth = len(item.Model) + 3 // 3 chars for " [" and "]"
+		}
+		availableWidth := m.terminalWidth - prefixWidth - typeInfoWidth - 1 // -1 for safety margin
+		
+		trimmedName := m.trimText(item.Name, availableWidth)
+
 		if i == m.cursor {
 			output.WriteString(numberPrefix)
-			output.WriteString(lipgloss.NewStyle().Foreground(ColorSelected).Bold(true).Render("▶ " + item.Name))
+			output.WriteString(lipgloss.NewStyle().Foreground(ColorSelected).Bold(true).Render("▶ " + trimmedName))
 		} else {
 			output.WriteString(numberPrefix)
-			output.WriteString("  " + item.Name)
+			output.WriteString("  " + trimmedName)
 		}
 
 		// Add type info
@@ -890,4 +929,14 @@ func (m Model) formatTimestamp(timestamp string) string {
 
 	// Format as a human-readable date
 	return t.Format("Jan 2, 2006 at 3:04 PM")
+}
+
+func (m Model) trimText(text string, maxWidth int) string {
+	if len(text) <= maxWidth {
+		return text
+	}
+	if maxWidth <= 3 {
+		return "..."
+	}
+	return text[:maxWidth-3] + "..."
 }
