@@ -4,7 +4,6 @@ import (
 	"github.com/amureki/metabase-explorer/pkg/api"
 )
 
-// Messages for Bubble Tea updates
 
 type databasesLoaded struct {
 	databases []api.Database
@@ -49,5 +48,15 @@ type collectionItemsLoaded struct {
 
 type cardDetailLoaded struct {
 	detail *api.CardDetail
+	err    error
+}
+
+type dashboardDetailLoaded struct {
+	detail *api.DashboardDetail
+	err    error
+}
+
+type metricDetailLoaded struct {
+	detail *api.MetricDetail
 	err    error
 }

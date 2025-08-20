@@ -291,3 +291,69 @@ func (c *MetabaseClient) GetCardDetail(cardID int) (*CardDetail, error) {
 
 	return &card, nil
 }
+
+func (c *MetabaseClient) GetDashboardDetail(dashboardID int) (*DashboardDetail, error) {
+	baseURL, err := url.Parse(c.BaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base URL: %v", err)
+	}
+
+	apiURL, err := baseURL.Parse(fmt.Sprintf("/api/dashboard/%d", dashboardID))
+	if err != nil {
+		return nil, fmt.Errorf("failed to construct API URL: %v", err)
+	}
+
+	req, _ := http.NewRequest("GET", apiURL.String(), nil)
+	req.Header.Set("X-API-Key", c.APIToken)
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to get dashboard detail: %d - %s", resp.StatusCode, string(body))
+	}
+
+	var dashboard DashboardDetail
+	if err := json.NewDecoder(resp.Body).Decode(&dashboard); err != nil {
+		return nil, err
+	}
+
+	return &dashboard, nil
+}
+
+func (c *MetabaseClient) GetMetricDetail(metricID int) (*MetricDetail, error) {
+	baseURL, err := url.Parse(c.BaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base URL: %v", err)
+	}
+
+	apiURL, err := baseURL.Parse(fmt.Sprintf("/api/card/%d", metricID))
+	if err != nil {
+		return nil, fmt.Errorf("failed to construct API URL: %v", err)
+	}
+
+	req, _ := http.NewRequest("GET", apiURL.String(), nil)
+	req.Header.Set("X-API-Key", c.APIToken)
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to get metric detail: %d - %s", resp.StatusCode, string(body))
+	}
+
+	var metric MetricDetail
+	if err := json.NewDecoder(resp.Body).Decode(&metric); err != nil {
+		return nil, err
+	}
+
+	return &metric, nil
+}
