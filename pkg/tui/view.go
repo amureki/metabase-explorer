@@ -154,15 +154,9 @@ func (m Model) getWebURL() string {
 func (m Model) View() string {
 	var output strings.Builder
 
-	// Colors
-	blue := lipgloss.Color("12")
-	gray := lipgloss.Color("240")
-	white := lipgloss.Color("15")
-	red := lipgloss.Color("9")
-
 	// Handle help mode first - return immediately without showing main content
 	if m.helpMode {
-		return m.renderHelpOverlay(&output, blue, gray, white)
+		return m.renderHelpOverlay(&output)
 	}
 
 	// Header
@@ -229,21 +223,21 @@ func (m Model) View() string {
 		}
 	}
 
-	output.WriteString(lipgloss.NewStyle().Bold(true).Foreground(blue).Render(title))
+	output.WriteString(lipgloss.NewStyle().Bold(true).Foreground(ColorPrimary).Render(title))
 	output.WriteString("\n")
-	output.WriteString(lipgloss.NewStyle().Foreground(gray).Render(path))
+	output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render(path))
 
 	// Always reserve a line for search bar to prevent jumping
 	output.WriteString("\n")
 	if m.searchMode {
 		searchPrompt := "/" + m.searchQuery + "_"
-		output.WriteString(lipgloss.NewStyle().Foreground(blue).Render("Search: " + searchPrompt))
+		output.WriteString(lipgloss.NewStyle().Foreground(ColorInfo).Render("Search: " + searchPrompt))
 		if len(m.filteredIndices) > 0 {
 			output.WriteString(" ")
-			output.WriteString(lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("(%d matches)", len(m.filteredIndices))))
+			output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render(fmt.Sprintf("(%d matches)", len(m.filteredIndices))))
 		}
 	} else if m.numberInput != "" {
-		output.WriteString(lipgloss.NewStyle().Foreground(blue).Render("Select: " + m.numberInput + "_"))
+		output.WriteString(lipgloss.NewStyle().Foreground(ColorInfo).Render("Select: " + m.numberInput + "_"))
 	}
 
 	output.WriteString("\n")
@@ -253,7 +247,7 @@ func (m Model) View() string {
 		spinnerChars := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 		spinner := spinnerChars[m.spinnerIndex%len(spinnerChars)]
 		loadingMsg := spinner + " Loading..."
-		output.WriteString(lipgloss.NewStyle().Foreground(blue).Render(loadingMsg))
+		output.WriteString(lipgloss.NewStyle().Foreground(ColorInfo).Render(loadingMsg))
 		output.WriteString("\n\n")
 		output.WriteString(m.getHelpText())
 		return output.String()
@@ -261,28 +255,28 @@ func (m Model) View() string {
 
 	// Handle errors
 	if m.error != "" {
-		output.WriteString(lipgloss.NewStyle().Foreground(red).Render("Error: " + m.error))
+		output.WriteString(lipgloss.NewStyle().Foreground(ColorError).Render("Error: " + m.error))
 		output.WriteString("\n\n")
-		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("Press 'q' to quit"))
+		output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("Press 'q' to quit"))
 		return output.String()
 	}
 
 	// Render content based on view
 	switch m.currentView {
 	case viewMainMenu:
-		m.renderMainMenu(&output, blue, gray, white)
+		m.renderMainMenu(&output)
 	case viewDatabases:
-		m.renderDatabases(&output, blue, gray, white)
+		m.renderDatabases(&output)
 	case viewCollections:
-		m.renderCollections(&output, blue, gray, white)
+		m.renderCollections(&output)
 	case viewCollectionItems:
-		m.renderCollectionItems(&output, blue, gray, white)
+		m.renderCollectionItems(&output)
 	case viewSchemas:
-		m.renderSchemas(&output, blue, gray, white)
+		m.renderSchemas(&output)
 	case viewTables:
-		m.renderTables(&output, blue, gray, white)
+		m.renderTables(&output)
 	case viewFields:
-		m.renderFields(&output, blue, gray, white)
+		m.renderFields(&output)
 	}
 
 	output.WriteString("\n")
@@ -292,11 +286,8 @@ func (m Model) View() string {
 }
 
 func (m Model) getHelpText() string {
-	gray := lipgloss.Color("240")
-	blue := lipgloss.Color("12")
-
-	keyStyle := lipgloss.NewStyle().Foreground(blue)
-	descStyle := lipgloss.NewStyle().Foreground(gray)
+	keyStyle := lipgloss.NewStyle().Foreground(ColorHighlight)
+	descStyle := lipgloss.NewStyle().Foreground(ColorMuted)
 
 	if m.searchMode {
 		return keyStyle.Render("esc") + descStyle.Render(" cancel  ") +
@@ -365,7 +356,7 @@ func (m Model) getHelpText() string {
 		// Add update notification if available
 		if m.updateAvailable {
 			help.WriteString("\n")
-			updateStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11")) // Yellow
+			updateStyle := lipgloss.NewStyle().Foreground(ColorWarning)
 			help.WriteString(updateStyle.Render("⚠ Update available: "))
 			help.WriteString(updateStyle.Render(m.latestVersion))
 			help.WriteString(descStyle.Render(" - Run: "))
@@ -376,9 +367,9 @@ func (m Model) getHelpText() string {
 	}
 }
 
-func (m Model) renderDatabases(output *strings.Builder, blue, gray, white lipgloss.Color) {
+func (m Model) renderDatabases(output *strings.Builder) {
 	if len(m.databases) == 0 {
-		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No databases found"))
+		output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("No databases found"))
 		return
 	}
 
@@ -388,7 +379,7 @@ func (m Model) renderDatabases(output *strings.Builder, blue, gray, white lipglo
 	if m.searchMode && m.searchQuery != "" && len(m.filteredIndices) > 0 {
 		itemsToShow = m.filteredIndices
 	} else if m.searchMode && m.searchQuery != "" {
-		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No matches found"))
+		output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("No matches found"))
 		return
 	} else {
 		for i := range m.databases {
@@ -400,28 +391,28 @@ func (m Model) renderDatabases(output *strings.Builder, blue, gray, white lipglo
 		db := m.databases[dbIndex]
 		var numberPrefix string
 		if len(m.databases) < 10 {
-			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%d ", i+1))
+			numberPrefix = lipgloss.NewStyle().Foreground(ColorMuted).Render(fmt.Sprintf("%d ", i+1))
 		} else {
-			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%02d ", i+1))
+			numberPrefix = lipgloss.NewStyle().Foreground(ColorMuted).Render(fmt.Sprintf("%02d ", i+1))
 		}
 
 		if i == m.cursor {
 			output.WriteString(numberPrefix)
-			output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("▶ " + db.Name))
+			output.WriteString(lipgloss.NewStyle().Foreground(ColorSelected).Bold(true).Render("▶ " + db.Name))
 			output.WriteString(" ")
-			output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("(" + db.Engine + ")"))
+			output.WriteString(lipgloss.NewStyle().Foreground(getItemTypeColor("database")).Render("(" + db.Engine + ")"))
 		} else {
 			output.WriteString(numberPrefix)
 			output.WriteString("  " + db.Name + " ")
-			output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("(" + db.Engine + ")"))
+			output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("(" + db.Engine + ")"))
 		}
 		output.WriteString("\n")
 	}
 }
 
-func (m Model) renderSchemas(output *strings.Builder, blue, gray, white lipgloss.Color) {
+func (m Model) renderSchemas(output *strings.Builder) {
 	if len(m.schemas) == 0 {
-		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No schemas found"))
+		output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("No schemas found"))
 		return
 	}
 
@@ -431,7 +422,7 @@ func (m Model) renderSchemas(output *strings.Builder, blue, gray, white lipgloss
 	if m.searchMode && m.searchQuery != "" && len(m.filteredIndices) > 0 {
 		itemsToShow = m.filteredIndices
 	} else if m.searchMode && m.searchQuery != "" {
-		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No matches found"))
+		output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("No matches found"))
 		return
 	} else {
 		for i := range m.schemas {
@@ -443,28 +434,28 @@ func (m Model) renderSchemas(output *strings.Builder, blue, gray, white lipgloss
 		schema := m.schemas[schemaIndex]
 		var numberPrefix string
 		if len(m.schemas) < 10 {
-			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%d ", i+1))
+			numberPrefix = lipgloss.NewStyle().Foreground(ColorMuted).Render(fmt.Sprintf("%d ", i+1))
 		} else {
-			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%02d ", i+1))
+			numberPrefix = lipgloss.NewStyle().Foreground(ColorMuted).Render(fmt.Sprintf("%02d ", i+1))
 		}
 
 		if i == m.cursor {
 			output.WriteString(numberPrefix)
-			output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("▶ " + schema.Name))
+			output.WriteString(lipgloss.NewStyle().Foreground(ColorSelected).Bold(true).Render("▶ " + schema.Name))
 			output.WriteString(" ")
-			output.WriteString(lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("(%d tables)", schema.TableCount)))
+			output.WriteString(lipgloss.NewStyle().Foreground(ColorInfo).Render(fmt.Sprintf("(%d tables)", schema.TableCount)))
 		} else {
 			output.WriteString(numberPrefix)
 			output.WriteString("  " + schema.Name + " ")
-			output.WriteString(lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("(%d tables)", schema.TableCount)))
+			output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render(fmt.Sprintf("(%d tables)", schema.TableCount)))
 		}
 		output.WriteString("\n")
 	}
 }
 
-func (m Model) renderTables(output *strings.Builder, blue, gray, white lipgloss.Color) {
+func (m Model) renderTables(output *strings.Builder) {
 	if len(m.tables) == 0 {
-		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No tables found"))
+		output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("No tables found"))
 		return
 	}
 
@@ -474,7 +465,7 @@ func (m Model) renderTables(output *strings.Builder, blue, gray, white lipgloss.
 	if m.searchMode && m.searchQuery != "" && len(m.filteredIndices) > 0 {
 		itemsToShow = m.filteredIndices
 	} else if m.searchMode && m.searchQuery != "" {
-		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No matches found"))
+		output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("No matches found"))
 		return
 	} else {
 		for i := range m.tables {
@@ -491,14 +482,14 @@ func (m Model) renderTables(output *strings.Builder, blue, gray, white lipgloss.
 
 		var numberPrefix string
 		if len(m.tables) < 10 {
-			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%d ", i+1))
+			numberPrefix = lipgloss.NewStyle().Foreground(ColorMuted).Render(fmt.Sprintf("%d ", i+1))
 		} else {
-			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%02d ", i+1))
+			numberPrefix = lipgloss.NewStyle().Foreground(ColorMuted).Render(fmt.Sprintf("%02d ", i+1))
 		}
 
 		if i == m.cursor {
 			output.WriteString(numberPrefix)
-			output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("▶ " + name))
+			output.WriteString(lipgloss.NewStyle().Foreground(ColorSelected).Bold(true).Render("▶ " + name))
 		} else {
 			output.WriteString(numberPrefix)
 			output.WriteString("  " + name)
@@ -509,9 +500,9 @@ func (m Model) renderTables(output *strings.Builder, blue, gray, white lipgloss.
 
 }
 
-func (m Model) renderFields(output *strings.Builder, blue, gray, white lipgloss.Color) {
+func (m Model) renderFields(output *strings.Builder) {
 	if len(m.fields) == 0 {
-		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No fields found"))
+		output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("No fields found"))
 		return
 	}
 
@@ -521,7 +512,7 @@ func (m Model) renderFields(output *strings.Builder, blue, gray, white lipgloss.
 	if m.searchMode && m.searchQuery != "" && len(m.filteredIndices) > 0 {
 		itemsToShow = m.filteredIndices
 	} else if m.searchMode && m.searchQuery != "" {
-		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No matches found"))
+		output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("No matches found"))
 		return
 	} else {
 		for i := range m.fields {
@@ -536,11 +527,11 @@ func (m Model) renderFields(output *strings.Builder, blue, gray, white lipgloss.
 			name = field.Name
 		}
 
-		numberPrefix := lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%02d ", i+1))
+		numberPrefix := lipgloss.NewStyle().Foreground(ColorMuted).Render(fmt.Sprintf("%02d ", i+1))
 
 		if i == m.cursor {
 			output.WriteString(numberPrefix)
-			output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("▶ " + name))
+			output.WriteString(lipgloss.NewStyle().Foreground(ColorSelected).Bold(true).Render("▶ " + name))
 		} else {
 			output.WriteString(numberPrefix)
 			output.WriteString("  " + name)
@@ -549,12 +540,13 @@ func (m Model) renderFields(output *strings.Builder, blue, gray, white lipgloss.
 		// Add type info
 		if field.DatabaseType != "" {
 			output.WriteString(" ")
-			output.WriteString(lipgloss.NewStyle().Foreground(gray).Render(field.DatabaseType))
+			output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render(field.DatabaseType))
 		}
 
 		if field.SemanticType != "" {
 			output.WriteString(" ")
-			output.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render("[" + field.SemanticType + "]"))
+			color := getSemanticTypeColor(field.SemanticType)
+			output.WriteString(lipgloss.NewStyle().Foreground(color).Render("[" + field.SemanticType + "]"))
 		}
 
 		output.WriteString("\n")
@@ -562,44 +554,44 @@ func (m Model) renderFields(output *strings.Builder, blue, gray, white lipgloss.
 
 }
 
-func (m Model) renderHelpOverlay(output *strings.Builder, blue, gray, white lipgloss.Color) string {
+func (m Model) renderHelpOverlay(output *strings.Builder) string {
 	// Title and copyright
-	output.WriteString(lipgloss.NewStyle().Bold(true).Foreground(blue).Render(fmt.Sprintf("Metabase Explorer %s | About", m.Version)))
+	output.WriteString(lipgloss.NewStyle().Bold(true).Foreground(ColorPrimary).Render(fmt.Sprintf("Metabase Explorer %s | About", m.Version)))
 	output.WriteString("\n")
-	output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("Copyright 2025 Rust Saiargaliev"))
+	output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("Copyright 2025 Rust Saiargaliev"))
 	output.WriteString("\n\n")
 
 	// Repository info
-	output.WriteString(lipgloss.NewStyle().Bold(true).Foreground(blue).Render("Links"))
+	output.WriteString(lipgloss.NewStyle().Bold(true).Foreground(ColorPrimary).Render("Links"))
 	output.WriteString("\n")
 
 	// Repository link
 	if m.helpCursor == 0 {
-		output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("▶ Repository: "))
-		output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("https://github.com/amureki/metabase-explorer"))
+		output.WriteString(lipgloss.NewStyle().Foreground(ColorSelected).Bold(true).Render("▶ Repository: "))
+		output.WriteString(lipgloss.NewStyle().Foreground(ColorSelected).Bold(true).Render("https://github.com/amureki/metabase-explorer"))
 	} else {
-		output.WriteString(lipgloss.NewStyle().Foreground(white).Render("  Repository: "))
-		output.WriteString(lipgloss.NewStyle().Foreground(blue).Render("https://github.com/amureki/metabase-explorer"))
+		output.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("7")).Render("  Repository: "))
+		output.WriteString(lipgloss.NewStyle().Foreground(ColorInfo).Render("https://github.com/amureki/metabase-explorer"))
 	}
 	output.WriteString("\n")
 
 	// Issues link
 	if m.helpCursor == 1 {
-		output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("▶ Issues:     "))
-		output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("https://github.com/amureki/metabase-explorer/issues"))
+		output.WriteString(lipgloss.NewStyle().Foreground(ColorSelected).Bold(true).Render("▶ Issues:     "))
+		output.WriteString(lipgloss.NewStyle().Foreground(ColorSelected).Bold(true).Render("https://github.com/amureki/metabase-explorer/issues"))
 	} else {
-		output.WriteString(lipgloss.NewStyle().Foreground(white).Render("  Issues:     "))
-		output.WriteString(lipgloss.NewStyle().Foreground(blue).Render("https://github.com/amureki/metabase-explorer/issues"))
+		output.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("7")).Render("  Issues:     "))
+		output.WriteString(lipgloss.NewStyle().Foreground(ColorInfo).Render("https://github.com/amureki/metabase-explorer/issues"))
 	}
 	output.WriteString("\n")
 
 	// Sponsor link
 	if m.helpCursor == 2 {
-		output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("▶ Sponsor:    "))
-		output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("https://github.com/sponsors/amureki"))
+		output.WriteString(lipgloss.NewStyle().Foreground(ColorSelected).Bold(true).Render("▶ Sponsor:    "))
+		output.WriteString(lipgloss.NewStyle().Foreground(ColorSelected).Bold(true).Render("https://github.com/sponsors/amureki"))
 	} else {
-		output.WriteString(lipgloss.NewStyle().Foreground(white).Render("  Sponsor:    "))
-		output.WriteString(lipgloss.NewStyle().Foreground(blue).Render("https://github.com/sponsors/amureki"))
+		output.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("7")).Render("  Sponsor:    "))
+		output.WriteString(lipgloss.NewStyle().Foreground(ColorInfo).Render("https://github.com/sponsors/amureki"))
 	}
 	output.WriteString("\n\n")
 
@@ -616,24 +608,24 @@ func (m Model) renderHelpOverlay(output *strings.Builder, blue, gray, white lipg
 		" \\ \\_____\\   /\\_\\/\\_\\  \\ \\_\\    \\ \\_____\\  \\ \\_____\\  \\ \\_\\ \\_\\  \\ \\_____\\  \\ \\_\\ \\_\\   \n" +
 		"  \\/_____/   \\/_/\\/_/   \\/_/     \\/_____/   \\/_____/   \\/_/ /_/   \\/_____/   \\/_/ /_/   \n" +
 		"                                                                                        "
-	output.WriteString(lipgloss.NewStyle().Foreground(blue).Render(logo))
+	output.WriteString(lipgloss.NewStyle().Foreground(ColorPrimary).Render(logo))
 	output.WriteString("\n\n")
 
-	output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("Use ↑↓ to navigate, Enter to open link, ? or esc to close"))
+	output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("Use ↑↓ to navigate, Enter to open link, ? or esc to close"))
 
 	return output.String()
 }
 
-func (m Model) renderMainMenu(output *strings.Builder, blue, gray, white lipgloss.Color) {
+func (m Model) renderMainMenu(output *strings.Builder) {
 	options := []string{"Collections", "Databases"}
 
 	for i, option := range options {
 		var numberPrefix string
-		numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%d ", i+1))
+		numberPrefix = lipgloss.NewStyle().Foreground(ColorMuted).Render(fmt.Sprintf("%d ", i+1))
 
 		if i == m.cursor {
 			output.WriteString(numberPrefix)
-			output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("▶ " + option))
+			output.WriteString(lipgloss.NewStyle().Foreground(ColorSelected).Bold(true).Render("▶ " + option))
 		} else {
 			output.WriteString(numberPrefix)
 			output.WriteString("  " + option)
@@ -642,9 +634,9 @@ func (m Model) renderMainMenu(output *strings.Builder, blue, gray, white lipglos
 	}
 }
 
-func (m Model) renderCollections(output *strings.Builder, blue, gray, white lipgloss.Color) {
+func (m Model) renderCollections(output *strings.Builder) {
 	if len(m.collections) == 0 {
-		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No collections found"))
+		output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("No collections found"))
 		return
 	}
 
@@ -654,7 +646,7 @@ func (m Model) renderCollections(output *strings.Builder, blue, gray, white lipg
 	if m.searchMode && m.searchQuery != "" && len(m.filteredIndices) > 0 {
 		itemsToShow = m.filteredIndices
 	} else if m.searchMode && m.searchQuery != "" {
-		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No matches found"))
+		output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("No matches found"))
 		return
 	} else {
 		for i := range m.collections {
@@ -666,33 +658,33 @@ func (m Model) renderCollections(output *strings.Builder, blue, gray, white lipg
 		collection := m.collections[collectionIndex]
 		var numberPrefix string
 		if len(m.collections) < 10 {
-			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%d ", i+1))
+			numberPrefix = lipgloss.NewStyle().Foreground(ColorMuted).Render(fmt.Sprintf("%d ", i+1))
 		} else {
-			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%02d ", i+1))
+			numberPrefix = lipgloss.NewStyle().Foreground(ColorMuted).Render(fmt.Sprintf("%02d ", i+1))
 		}
 
 		if i == m.cursor {
 			output.WriteString(numberPrefix)
-			output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("▶ " + collection.Name))
+			output.WriteString(lipgloss.NewStyle().Foreground(ColorSelected).Bold(true).Render("▶ " + collection.Name))
 			if collection.Description != "" {
 				output.WriteString(" ")
-				output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("(" + collection.Description + ")"))
+				output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("(" + collection.Description + ")"))
 			}
 		} else {
 			output.WriteString(numberPrefix)
 			output.WriteString("  " + collection.Name)
 			if collection.Description != "" {
 				output.WriteString(" ")
-				output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("(" + collection.Description + ")"))
+				output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("(" + collection.Description + ")"))
 			}
 		}
 		output.WriteString("\n")
 	}
 }
 
-func (m Model) renderCollectionItems(output *strings.Builder, blue, gray, white lipgloss.Color) {
+func (m Model) renderCollectionItems(output *strings.Builder) {
 	if len(m.collectionItems) == 0 {
-		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No items found in this collection"))
+		output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("No items found in this collection"))
 		return
 	}
 
@@ -702,7 +694,7 @@ func (m Model) renderCollectionItems(output *strings.Builder, blue, gray, white 
 	if m.searchMode && m.searchQuery != "" && len(m.filteredIndices) > 0 {
 		itemsToShow = m.filteredIndices
 	} else if m.searchMode && m.searchQuery != "" {
-		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("No matches found"))
+		output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("No matches found"))
 		return
 	} else {
 		for i := range m.collectionItems {
@@ -718,7 +710,7 @@ func (m Model) renderCollectionItems(output *strings.Builder, blue, gray, white 
 	
 	// Show scroll indicators if there are items outside viewport
 	if m.viewportStart > 0 {
-		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("   ↑ ... (showing items " + fmt.Sprintf("%d-%d of %d)", m.viewportStart+1, viewportEnd, len(itemsToShow)) + ")"))
+		output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("   ↑ ... (showing items " + fmt.Sprintf("%d-%d of %d)", m.viewportStart+1, viewportEnd, len(itemsToShow)) + ")"))
 		output.WriteString("\n")
 	}
 
@@ -727,14 +719,14 @@ func (m Model) renderCollectionItems(output *strings.Builder, blue, gray, white 
 		item := m.collectionItems[itemIndex]
 		var numberPrefix string
 		if len(m.collectionItems) < 10 {
-			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%d ", i+1))
+			numberPrefix = lipgloss.NewStyle().Foreground(ColorMuted).Render(fmt.Sprintf("%d ", i+1))
 		} else {
-			numberPrefix = lipgloss.NewStyle().Foreground(gray).Render(fmt.Sprintf("%02d ", i+1))
+			numberPrefix = lipgloss.NewStyle().Foreground(ColorMuted).Render(fmt.Sprintf("%02d ", i+1))
 		}
 
 		if i == m.cursor {
 			output.WriteString(numberPrefix)
-			output.WriteString(lipgloss.NewStyle().Foreground(blue).Bold(true).Render("▶ " + item.Name))
+			output.WriteString(lipgloss.NewStyle().Foreground(ColorSelected).Bold(true).Render("▶ " + item.Name))
 		} else {
 			output.WriteString(numberPrefix)
 			output.WriteString("  " + item.Name)
@@ -743,13 +735,14 @@ func (m Model) renderCollectionItems(output *strings.Builder, blue, gray, white 
 		// Add type info
 		if item.Model != "" {
 			output.WriteString(" ")
-			output.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render("[" + item.Model + "]"))
+			typeColor := getItemTypeColor(item.Model)
+			output.WriteString(lipgloss.NewStyle().Foreground(typeColor).Render("[" + item.Model + "]"))
 		}
 
 		// Add description if available
 		if item.Description != "" {
 			output.WriteString(" ")
-			output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("(" + item.Description + ")"))
+			output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("(" + item.Description + ")"))
 		}
 
 		output.WriteString("\n")
@@ -757,7 +750,7 @@ func (m Model) renderCollectionItems(output *strings.Builder, blue, gray, white 
 	
 	// Show bottom scroll indicator if there are more items below
 	if viewportEnd < len(itemsToShow) {
-		output.WriteString(lipgloss.NewStyle().Foreground(gray).Render("   ↓ ... (showing items " + fmt.Sprintf("%d-%d of %d)", m.viewportStart+1, viewportEnd, len(itemsToShow)) + ")"))
+		output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("   ↓ ... (showing items " + fmt.Sprintf("%d-%d of %d)", m.viewportStart+1, viewportEnd, len(itemsToShow)) + ")"))
 		output.WriteString("\n")
 	}
 }
