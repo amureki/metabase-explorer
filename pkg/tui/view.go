@@ -320,24 +320,16 @@ func (m Model) getHelpText() string {
 	descStyle := lipgloss.NewStyle().Foreground(ColorMuted)
 
 	if m.searchMode {
-		return keyStyle.Render("esc") + descStyle.Render(" cancel  ") +
+		return keyStyle.Render("↑↓←→") + descStyle.Render(" navigate  ") +
 			keyStyle.Render("enter") + descStyle.Render(" select  ") +
-			keyStyle.Render("↑↓") + descStyle.Render(" navigate")
+			keyStyle.Render("esc") + descStyle.Render(" cancel")
 	} else {
 		var help strings.Builder
 
 		// Navigation section - combine all arrows
 		var navigation strings.Builder
-		if m.currentView == viewMainMenu {
-			navigation.WriteString(keyStyle.Render("↑↓→"))
-			navigation.WriteString(descStyle.Render(" navigate  "))
-		} else if m.currentView == viewDatabases || m.currentView == viewCollections {
-			navigation.WriteString(keyStyle.Render("↑↓←→"))
-			navigation.WriteString(descStyle.Render(" navigate  "))
-		} else {
-			navigation.WriteString(keyStyle.Render("↑↓←→"))
-			navigation.WriteString(descStyle.Render(" navigate  "))
-		}
+		navigation.WriteString(keyStyle.Render("↑↓←→"))
+		navigation.WriteString(descStyle.Render(" navigate  "))
 
 		// Quick select (context-aware)
 		var itemCount int
@@ -663,7 +655,12 @@ func (m Model) renderHelpOverlay(output *strings.Builder) string {
 	output.WriteString(lipgloss.NewStyle().Foreground(ColorPrimary).Render(logo))
 	output.WriteString("\n\n")
 
-	output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("Use ↑↓ to navigate, Enter to open link, ? or esc to close"))
+	keyStyle := lipgloss.NewStyle().Foreground(ColorHighlight)
+	descStyle := lipgloss.NewStyle().Foreground(ColorMuted)
+	
+	output.WriteString(keyStyle.Render("↑↓←→") + descStyle.Render(" navigate  ") +
+		keyStyle.Render("enter") + descStyle.Render(" open  ") +
+		keyStyle.Render("esc") + descStyle.Render(" close"))
 
 	return output.String()
 }
