@@ -707,10 +707,21 @@ func (m Model) renderCollectionItems(output *strings.Builder) {
 	if viewportEnd > len(itemsToShow) {
 		viewportEnd = len(itemsToShow)
 	}
-	
-	// Show scroll indicators if there are items outside viewport
-	if m.viewportStart > 0 {
-		output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("   ↑ ... (showing items " + fmt.Sprintf("%d-%d of %d)", m.viewportStart+1, viewportEnd, len(itemsToShow)) + ")"))
+	// Show top pagination indicator when pagination is needed
+	if len(itemsToShow) > m.viewportHeight {
+		var prefix string
+		if len(m.collectionItems) < 10 {
+			prefix = "  "  // 2 chars for single digits
+		} else {
+			prefix = "   " // 3 chars for double digits  
+		}
+		prefix += "  " // 2 more chars to align with item names (after ▶ or spaces)
+		
+		if m.viewportStart > 0 {
+			output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("↑" + prefix[1:] + "... " + fmt.Sprintf("%d-%d of %d items", m.viewportStart+1, viewportEnd, len(itemsToShow))))
+		} else {
+			output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render(prefix + "... " + fmt.Sprintf("%d-%d of %d items", m.viewportStart+1, viewportEnd, len(itemsToShow))))
+		}
 		output.WriteString("\n")
 	}
 
@@ -747,10 +758,21 @@ func (m Model) renderCollectionItems(output *strings.Builder) {
 
 		output.WriteString("\n")
 	}
-	
-	// Show bottom scroll indicator if there are more items below
-	if viewportEnd < len(itemsToShow) {
-		output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("   ↓ ... (showing items " + fmt.Sprintf("%d-%d of %d)", m.viewportStart+1, viewportEnd, len(itemsToShow)) + ")"))
+	// Show bottom pagination indicator when pagination is needed
+	if len(itemsToShow) > m.viewportHeight {
+		var prefix string
+		if len(m.collectionItems) < 10 {
+			prefix = "  "  // 2 chars for single digits
+		} else {
+			prefix = "   " // 3 chars for double digits  
+		}
+		prefix += "  " // 2 more chars to align with item names (after ▶ or spaces)
+		
+		if viewportEnd < len(itemsToShow) {
+			output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("↓" + prefix[1:] + "... " + fmt.Sprintf("%d-%d of %d items", m.viewportStart+1, viewportEnd, len(itemsToShow))))
+		} else {
+			output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render(prefix + "... " + fmt.Sprintf("%d-%d of %d items", m.viewportStart+1, viewportEnd, len(itemsToShow))))
+		}
 		output.WriteString("\n")
 	}
 }
