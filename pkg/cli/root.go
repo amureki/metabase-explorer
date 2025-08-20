@@ -55,6 +55,7 @@ func Execute(args []string, ver string) {
 	version = ver
 	var showVersion, showHelp bool
 	var metabaseURL, apiToken, profile, configFile string
+	var parsedArgs []string
 
 	// Basic flag parsing
 	for i := 0; i < len(args); i++ {
@@ -83,6 +84,13 @@ func Execute(args []string, ver string) {
 				configFile = args[i+1]
 				i++
 			}
+		default:
+			if args[i][0] == '-' {
+				fmt.Fprintf(os.Stderr, "Error: Unknown flag '%s'\n", args[i])
+				fmt.Fprintf(os.Stderr, "Run 'mbx --help' for usage information.\n")
+				os.Exit(1)
+			}
+			parsedArgs = append(parsedArgs, args[i])
 		}
 	}
 
@@ -90,17 +98,21 @@ func Execute(args []string, ver string) {
 		config.SetGlobalConfigFile(configFile)
 	}
 
-	if len(args) > 0 {
-		switch args[0] {
+	if len(parsedArgs) > 0 {
+		switch parsedArgs[0] {
 		case "init":
 			handleConfigInit()
 			return
 		case "config":
-			handleConfigCommand(args[1:])
+			handleConfigCommand(parsedArgs[1:])
 			return
 		case "update":
 			util.HandleUpdateCommand(version)
 			return
+		default:
+			fmt.Fprintf(os.Stderr, "Error: Unknown command '%s'\n", parsedArgs[0])
+			fmt.Fprintf(os.Stderr, "Run 'mbx --help' for usage information.\n")
+			os.Exit(1)
 		}
 	}
 
