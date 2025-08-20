@@ -207,7 +207,7 @@ func (m Model) View() string {
 			pathParts = append(pathParts, collection.Name)
 		}
 		pathParts = append(pathParts, m.selectedCollection.Name)
-		
+
 		if len(m.collectionItems) > 0 {
 			path = fmt.Sprintf("%s (%d)", strings.Join(pathParts, " > "), len(m.collectionItems))
 		} else {
@@ -626,18 +626,19 @@ func (m Model) renderHelpOverlay(output *strings.Builder) string {
 	output.WriteString("\n\n")
 
 	// ASCII text logo
-	logo := " __    __     ______     ______   ______     ______     ______     ______     ______    \n" +
-		"/\\ \"-./  \\   /\\  ___\\   /\\__  _\\ /\\  __ \\   /\\  == \\   /\\  __ \\   /\\  ___\\   /\\  ___\\   \n" +
-		"\\ \\ \\-./\\ \\  \\ \\  __\\   \\/_/\\ \\/ \\ \\  __ \\  \\ \\  __<   \\ \\  __ \\  \\ \\___  \\  \\ \\  __\\   \n" +
-		" \\ \\_\\ \\ \\_\\  \\ \\_____\\    \\ \\_\\  \\ \\_\\ \\_\\  \\ \\_____\\  \\ \\_\\ \\_\\  \\/\\_____\\  \\ \\_____\\ \n" +
-		"  \\/_/  \\/_/   \\/_____/     \\/_/   \\/_/\\/_/   \\/_____/   \\/_/\\/_/   \\/_____/   \\/_____/ \n" +
-		"                                                                                        \n" +
-		" ______     __  __     ______   __         ______     ______     ______     ______      \n" +
-		"/\\  ___\\   /\\_\\_\\_\\   /\\  == \\ /\\ \\       /\\  __ \\   /\\  == \\   /\\  ___\\   /\\  == \\     \n" +
-		"\\ \\  __\\   \\/_/\\_\\/_  \\ \\  _-/ \\ \\ \\____  \\ \\ \\/\\ \\  \\ \\  __<   \\ \\  __\\   \\ \\  __<     \n" +
-		" \\ \\_____\\   /\\_\\/\\_\\  \\ \\_\\    \\ \\_____\\  \\ \\_____\\  \\ \\_\\ \\_\\  \\ \\_____\\  \\ \\_\\ \\_\\   \n" +
-		"  \\/_____/   \\/_/\\/_/   \\/_/     \\/_____/   \\/_____/   \\/_/ /_/   \\/_____/   \\/_/ /_/   \n" +
-		"                                                                                        "
+	logo := "███╗░░░███╗███████╗████████╗░█████╗░██████╗░░█████╗░░██████╗███████╗\n" +
+		"████╗░████║██╔════╝╚══██╔══╝██╔══██╗██╔══██╗██╔══██╗██╔════╝██╔════╝\n" +
+		"██╔████╔██║█████╗░░░░░██║░░░███████║██████╦╝███████║╚█████╗░█████╗░░\n" +
+		"██║╚██╔╝██║██╔══╝░░░░░██║░░░██╔══██║██╔══██╗██╔══██║░╚═══██╗██╔══╝░░\n" +
+		"██║░╚═╝░██║███████╗░░░██║░░░██║░░██║██████╦╝██║░░██║██████╔╝███████╗\n" +
+		"╚═╝░░░░░╚═╝╚══════╝░░░╚═╝░░░╚═╝░░╚═╝╚═════╝░╚═╝░░╚═╝╚═════╝░╚══════╝\n" +
+		"                                                                    \n" +
+		"███████╗██╗░░██╗██████╗░██╗░░░░░░█████╗░██████╗░███████╗██████╗░\n" +
+		"██╔════╝╚██╗██╔╝██╔══██╗██║░░░░░██╔══██╗██╔══██╗██╔════╝██╔══██╗\n" +
+		"█████╗░░░╚███╔╝░██████╔╝██║░░░░░██║░░██║██████╔╝█████╗░░██████╔╝\n" +
+		"██╔══╝░░░██╔██╗░██╔═══╝░██║░░░░░██║░░██║██╔══██╗██╔══╝░░██╔══██╗\n" +
+		"███████╗██╔╝╚██╗██║░░░░░███████╗╚█████╔╝██║░░██║███████╗██║░░██║\n" +
+		"╚══════╝╚═╝░░╚═╝╚═╝░░░░░╚══════╝░╚════╝░╚═╝░░╚═╝╚══════╝╚═╝░░╚═╝"
 	output.WriteString(lipgloss.NewStyle().Foreground(ColorPrimary).Render(logo))
 	output.WriteString("\n\n")
 
@@ -741,12 +742,12 @@ func (m Model) renderCollectionItems(output *strings.Builder) {
 	if len(itemsToShow) > m.viewportHeight {
 		var prefix string
 		if len(m.collectionItems) < 10 {
-			prefix = "  "  // 2 chars for single digits
+			prefix = "  " // 2 chars for single digits
 		} else {
-			prefix = "   " // 3 chars for double digits  
+			prefix = "   " // 3 chars for double digits
 		}
 		prefix += "  " // 2 more chars to align with item names (after ▶ or spaces)
-		
+
 		if m.viewportStart > 0 {
 			output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("↑" + prefix[1:] + "... " + fmt.Sprintf("%d-%d of %d items", m.viewportStart+1, viewportEnd, len(itemsToShow))))
 		} else {
@@ -780,19 +781,18 @@ func (m Model) renderCollectionItems(output *strings.Builder) {
 			output.WriteString(lipgloss.NewStyle().Foreground(typeColor).Render("[" + item.Model + "]"))
 		}
 
-
 		output.WriteString("\n")
 	}
 	// Show bottom pagination indicator when pagination is needed
 	if len(itemsToShow) > m.viewportHeight {
 		var prefix string
 		if len(m.collectionItems) < 10 {
-			prefix = "  "  // 2 chars for single digits
+			prefix = "  " // 2 chars for single digits
 		} else {
-			prefix = "   " // 3 chars for double digits  
+			prefix = "   " // 3 chars for double digits
 		}
 		prefix += "  " // 2 more chars to align with item names (after ▶ or spaces)
-		
+
 		if viewportEnd < len(itemsToShow) {
 			output.WriteString(lipgloss.NewStyle().Foreground(ColorMuted).Render("↓" + prefix[1:] + "... " + fmt.Sprintf("%d-%d of %d items", m.viewportStart+1, viewportEnd, len(itemsToShow))))
 		} else {
