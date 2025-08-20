@@ -678,10 +678,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // updateViewport adjusts the viewport to keep the cursor visible
 func (m *Model) updateViewport(itemCount int) {
-	// Reserve space for header (title + path + search), help text, and some padding
-	// Rough estimate: 6 lines for UI elements
+	// Reserve space for header (title + path + search), help text, pagination indicators, and padding
+	// Breakdown: title(1) + path(1) + empty(1) + pagination_top(1) + help(2) + pagination_bottom(1) + padding(3) = 10 lines
 	terminalHeight := 25 // Conservative estimate - in real implementation could use tea.WindowSizeMsg
-	m.viewportHeight = terminalHeight - 8 // Reserve 8 lines for UI elements
+	m.viewportHeight = terminalHeight - 10 // Reserve 10 lines for UI elements including pagination
 	
 	if m.viewportHeight < 5 {
 		m.viewportHeight = 5 // Minimum viewport
